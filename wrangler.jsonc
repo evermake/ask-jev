@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ask-jev-api",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-11-06",
+  "workers_dev": true,
+  "vars": {
+    "ALLOWED_ORIGINS": "https://evermake.github.io,http://localhost:3000",
+    "DOCS_HOSTS": "docs.typesafe.ai",
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "HTTP_CACHE", "class_name": "HttpCacheObject" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HttpCacheObject"] }],
+  "ratelimits": [
+    {
+      "name": "REQUEST_LIMITER",
+      "namespace_id": "538561",
+      "simple": { "limit": 120, "period": 60 },
+    },
+  ],
+  "observability": { "enabled": false },
+}

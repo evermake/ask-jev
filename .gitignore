@@ -1,0 +1,15 @@
+node_modules/
+site/
+.wrangler/
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+*.db
+*.db-*
+*.sqlite*
+*.pem
+*.key
+*.log
+.DS_Store
+coverage/

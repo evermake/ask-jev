@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self' https: http://localhost:8787; base-uri 'none'; form-action 'none'; object-src 'none'"
+    />
+    <title>Ask Jev</title>
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <section id="settings" aria-label="API key">
+      <label
+        >TypeSafe API key
+        <input
+          id="api-key"
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="Your own key; memory only"
+      /></label>
+      <button id="forget-key" type="button">Forget key</button>
+      <span id="key-status" role="status">Browsing needs no key.</span>
+      <small
+        >Search sends your key, question, and docs to the Worker / TypeSafe. Keys are never saved.
+        Use public docs only.</small
+      >
+    </section>
+    <div id="app"><p>Loading Ask Jev…</p></div>
+    <noscript>JavaScript is required to browse and search documentation.</noscript>
+  </body>
+</html>
