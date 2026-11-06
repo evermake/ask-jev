@@ -220,14 +220,21 @@ const jev = async (request: Request): Promise<Response> => {
     throw new PublicError('Invalid System One request.')
   }
   const count = Object.keys(body.questions).length
-  if (count < 1 || count > 255) throw new PublicError('Provide 1–255 questions.')
+  // 255 is the per-choice option limit, not a limit on the number of questions.
+  // Request size is bounded by MAX_API_BYTES; search also budgets its token windows.
+  if (count < 1) throw new PublicError('Provide at least one question.')
   const upstream = await fetch(ENDPOINT, {
     method: 'POST',
     headers: { authorization, 'content-type': 'application/json' },
     body: JSON.stringify(body),
-    redirect: 'error',
+    // workerd accepts only follow/manual. Never follow a redirect with a visitor's key.
+    redirect: 'manual',
     signal: AbortSignal.timeout(30_000),
   })
+  if (upstream.status >= 300 && upstream.status < 400) {
+    await upstream.body?.cancel()
+    throw new PublicError('Jev redirects are not allowed.', 502)
+  }
   if (!upstream.ok) {
     await upstream.body?.cancel()
     // Do not echo upstream error bodies: they may contain request details.

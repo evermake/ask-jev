@@ -1,5 +1,9 @@
 import { afterEach, expect, mock, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
+import { Effect, Layer, Schema } from 'effect'
+import * as PagePath from '../src/PagePath.ts'
+import * as Search from '../src/Search.ts'
+import * as SystemOne from '../src/SystemOne.ts'
 
 // Use real SQLite and the actual Worker implementation without making network calls or using keys.
 mock.module('cloudflare:workers', () => ({
@@ -148,7 +152,7 @@ test('Jev proxy forwards a visitor key only to the fixed endpoint and never stor
     expect(String(input)).toBe('https://api.typesafe.ai/v1/systemone')
     expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${visitorKey}`)
     expect(new Headers(init?.headers).get('cookie')).toBeNull()
-    expect(init?.redirect).toBe('error')
+    expect(init?.redirect).toBe('manual')
     return Response.json({
       model: 'jev-test',
       answers: {},
@@ -207,6 +211,26 @@ test('rejects missing keys, unsupported models and malformed bodies without call
   db.close()
 })
 
+test('still rejects an empty question set without calling Jev', async () => {
+  const { request, db } = make()
+  const upstream = mock(async () => {
+    throw new Error('Must not be called')
+  })
+  globalThis.fetch = upstream as typeof fetch
+  try {
+    const response = await request('/systemone', {
+      method: 'POST',
+      headers: { authorization: 'Bearer synthetic-test-key', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'jev-latest', state: {}, questions: {} }),
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'Provide at least one question.' })
+    expect(upstream).not.toHaveBeenCalled()
+  } finally {
+    db.close()
+  }
+})
+
 test('does not echo upstream errors or credentials to the browser', async () => {
   const { request, db } = make()
   globalThis.fetch = mock(
@@ -224,4 +248,93 @@ test('does not echo upstream errors or credentials to the browser', async () => 
   expect(response.status).toBe(401)
   expect(await response.text()).not.toContain('sensitive upstream details')
   db.close()
+})
+
+test('rejects Jev redirects without forwarding the visitor key to another destination', async () => {
+  const { request, db } = make()
+  const upstream = mock(async (_input, init) => {
+    expect(init?.redirect).toBe('manual')
+    return new Response(null, {
+      status: 302,
+      headers: { location: 'https://untrusted.example/collect' },
+    })
+  })
+  globalThis.fetch = upstream as typeof fetch
+  try {
+    const response = await request('/systemone', {
+      method: 'POST',
+      headers: { authorization: 'Bearer synthetic-test-key', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'jev-latest',
+        state: {},
+        questions: { q: { type: 'noul', instructions: '?' } },
+      }),
+    })
+    expect(response.status).toBe(502)
+    expect(response.headers.has('location')).toBe(false)
+    expect(await response.json()).toEqual({ error: 'Jev redirects are not allowed.' })
+    expect(upstream).toHaveBeenCalledTimes(1)
+  } finally {
+    db.close()
+  }
+})
+
+test('searches a link-heavy index through the Worker with more than 255 questions', async () => {
+  const { request, db } = make()
+  const counts: Array<number> = []
+  globalThis.fetch = mock(async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as SystemOne.Request
+    counts.push(Object.keys(body.questions).length)
+    return Response.json({
+      model: 'jev-test',
+      answers: Object.fromEntries(
+        Object.keys(body.questions).map((id) => [id, { type: 'noul', noul: 0.95 }]),
+      ),
+      usage: { input_tokens: 100, output_tokens: 0 },
+    })
+  }) as typeof fetch
+  const content =
+    '# Public docs\n\n' +
+    Array.from({ length: 150 }, (_, i) => `- [Guide ${i}](/guide-${i}.md): public guide`).join('\n')
+  const decodeResponse = Schema.decodeUnknownSync(SystemOne.Response)
+  try {
+    const result = await Search.search(
+      {
+        origin: 'https://docs.typesafe.ai',
+        index: PagePath.PagePath.make('/llms.txt'),
+        page: (path) =>
+          Effect.succeed({ url: new URL(`https://docs.typesafe.ai${path}`), content }),
+      },
+      'Find the public guides',
+    ).pipe(
+      Effect.provide(
+        Layer.succeed(SystemOne.SystemOne, {
+          evaluate: (body) =>
+            Effect.tryPromise({
+              try: async () => {
+                const response = await request('/systemone', {
+                  method: 'POST',
+                  headers: {
+                    authorization: 'Bearer synthetic-test-key',
+                    'content-type': 'application/json',
+                  },
+                  body: JSON.stringify({ model: 'jev-latest', ...body }),
+                })
+                expect(response.status).toBe(200)
+                return decodeResponse(await response.json())
+              },
+              catch: () =>
+                new SystemOne.SystemOneError({ message: 'Worker rejected the synthetic search' }),
+            }),
+        }),
+      ),
+      Effect.runPromise,
+    )
+    expect(counts[0]).toBe(302)
+    expect(result.stopped).toBe('answered')
+    expect(result.passages.length).toBeGreaterThan(0)
+    expect(result.usage.requests).toBe(2)
+  } finally {
+    db.close()
+  }
 })
