@@ -1,0 +1,9 @@
+packages:
+  - shared
+  - ask-jev
+  - api
+  - playground
+
+onlyBuiltDependencies:
+  - esbuild
+  - workerd

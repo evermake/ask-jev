@@ -1,19 +1,18 @@
 {
   "compilerOptions": {
-    "target": "ESNext",
+    "target": "ES2023",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "module": "Preserve",
-    "moduleResolution": "bundler",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
     "noEmit": true,
-    "types": ["bun"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "exactOptionalPropertyTypes": true,
     "skipLibCheck": true
-  },
-  "include": ["src", "scripts"]
+  }
 }

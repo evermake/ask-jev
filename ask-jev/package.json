@@ -1,0 +1,30 @@
+{
+  "name": "ask-jev",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Composable Effect services for searching documentation with Jev",
+  "engines": { "node": ">=24" },
+  "files": ["dist", "src", "README.md"],
+  "sideEffects": false,
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./*": { "types": "./dist/*.d.ts", "import": "./dist/*.js" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "prepack": "pnpm build"
+  },
+  "peerDependencies": { "effect": "^4.0.5" },
+  "dependencies": {
+    "mdast-util-from-markdown": "2.1.0",
+    "mdast-util-gfm": "3.1.0",
+    "mdast-util-to-string": "4.0.0",
+    "micromark-extension-gfm": "3.0.0",
+    "unist-util-visit": "5.1.0"
+  },
+  "devDependencies": { "effect": "4.0.5", "@types/mdast": "4.0.4" }
+}

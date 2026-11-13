@@ -1,73 +1,141 @@
 # Ask Jev
 
-Browse public documentation and find passages with TypeSafe's Jev / System One model. The frontend is a static GitHub Pages site; a separate Cloudflare Worker handles upstream requests, with a SQLite-backed Durable Object caching documentation.
+Find relevant passages in public documentation using TypeSafe's Jev / System One model. This is a **pnpm workspace running on Node.js 24+**, with an integratable Effect library, a Cloudflare Worker + SQLite Durable Object API, and a React + Vite playground.
 
-## Use
+Search returns documentation as written, **not generated answers**. Visitors supply their own TypeSafe API keys and pay for their own searches. The budget is an estimate, not a billing cap.
 
-Open <https://evermake.github.io/ask-jev/>, enter a public docs index such as `https://docs.typesafe.ai/llms.txt`, and browse its links. To search, enter **your own TypeSafe API key**, a question, a budget, and a model.
+## Architecture
 
-Search returns relevant passages, not generated answers. It shows relevance scores, pages followed, token usage, and the requests sent to Jev. Searches cost money on **your** TypeSafe account. The budget is an estimate, not a billing cap; upstream retries and slow-request duplicates can incur additional charges.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the repository structure, package dependency graph, service interfaces, request flows and standalone npm integration examples.
 
-The Worker only fetches hosts listed in `DOCS_HOSTS`. Initially that is `docs.typesafe.ai`. Add other **public documentation** hosts explicitly before using them; redirects must also stay within this list. URLs must use HTTPS and cannot contain credentials, query strings, or fragments. This restriction intentionally avoids creating a general-purpose public proxy.
+```text
+React playground (Cloudflare static assets)
+  │ same-origin /api/page and /api/search
+  ▼
+Worker (origin checks, rate limiting, per-host DO routing)
+  ▼
+Durable Object (one per approved documentation hostname)
+  ├── ask-jev: Markdown, HTTP cache workflow, best-first search, Jev client
+  ├── public documentation ←→ SQLite HTTP cache
+  └── request-scoped visitor key → https://api.typesafe.ai/v1/systemone
+```
 
-## Privacy and security
+**All documentation fetching, cache reads/writes, Markdown processing, search orchestration, and Jev calls run in the Durable Object.** The Worker is an admission/routing layer. The browser does not run the search algorithm or talk to TypeSafe directly.
 
-- The site has no shared API key. Visitors authorize Jev requests with their own key.
-- Keys stay in tab memory until forgotten, navigation away, or reload. They are never put in URLs, local/session storage, cookies, build artifacts, or the SQLite cache. The password field necessarily holds the key while in use.
-- The key is sent over HTTPS to the configured Worker, and from there **only** to `https://api.typesafe.ai/v1/systemone`. The Worker operator is therefore part of your trust boundary. Use a dedicated, limited-spend key.
-- Search questions and selected documentation are sent to the Worker and TypeSafe. Questions are omitted from navigation URLs. Neither prompts nor Jev responses are persisted by application code; TypeSafe's own data policies still apply.
-- SQLite stores **public documentation only**, with HTTP freshness, ETag / Last-Modified revalidation, safe stale-on-error fallback, Markdown alternatives, eviction, and retention cleanup. Private, `no-store`, cookie-setting, or credential-varying responses are not persisted. Do not use confidential documentation.
-- Cache storage is bounded to 128 entries / 8 MB per approved host and entries older than seven days are removed on access or periodic cleanup.
-- Worker observability is disabled, and application code does not log request bodies, keys, or prompts. Hosting providers may still retain operational metadata according to their policies.
-- Exact-origin CORS, per-IP rate limits, an operator-managed host allowlist, validation of every redirect, and streaming size limits reduce abuse. **CORS is not authentication**: non-browser clients can spoof Origin. Rate limits are approximate and per Cloudflare location; they are not an account-wide cost cap. No operator-funded TypeSafe key is available to abuse.
-- The frontend bundles its dependencies locally and loads no analytics, external scripts, or remote fonts. Its CSP blocks form submissions and script injection. Request bodies and documentation are rendered as escaped text, not trusted HTML.
+| Package | Responsibility |
+| --- | --- |
+| `shared/` | Dependency-free `@ask-jev/shared` documentation catalog, shared by the API and playground. |
+| [`ask-jev/`](ask-jev/README.md) | Platform-independent Effect services, Markdown parsing, HTTP caching, Jev requests and search. No Cloudflare or browser dependencies. |
+| `api/` | Worker proxy, Durable Object, SQLite cache adapter, catalog-based URL policy, typed API contract, Cloudflare deployment. |
+| `playground/` | React + Vite SPA. Documentation dropdown, key input, browsing, search results, passages, usage and pages explored. |
+
+### Documentation catalog
+
+The playground dropdown and server policy use `DOCS` from `@ask-jev/shared`:
+
+| ID | Label | Fixed search index |
+| --- | --- | --- |
+| `typesafe` | TypeSafe | `https://docs.typesafe.ai/llms.txt` |
+| `telegram` | Telegram | `https://core.telegram.org/llms.txt` |
+| `cloudflare` | Cloudflare | `https://developers.cloudflare.com/llms.txt` |
+
+To add documentation, add one `{ id, label, indexUrl }` entry in **`shared/src/index.ts`**, update the expected-entry test, and rebuild/deploy. The package exports the readonly `DOCS` catalog and derived `DocsEntry`/`DocsId` types, with no framework or Effect dependencies. There is no `DOCS_HOSTS` setting or arbitrary-host input.
+
+### Where the implementation lives
+
+- `ask-jev/src/Search.ts`: best-first traversal, page/window concurrency, passage scoring, answer judging and estimated budget accounting.
+- `ask-jev/src/SystemOne.ts`: typed Jev requests/responses and Effect HTTP client. No speculative duplicates; paid retries are opt-in.
+- `ask-jev/src/Documentation.ts`: injectable storage, transport and policy services; conditional requests, freshness, stale-on-error and Markdown alternatives.
+- `ask-jev/src/HttpCache.ts`: pure RFC 9111 caching semantics.
+- `ask-jev/src/Docs.ts`, `Markdown.ts`: documentation facade, links, headings and blocks.
+- `api/src/object.ts`: composes these services **per request** in the DO.
+- `api/src/cache.ts`: Cloudflare SQLite storage adapter, retention, eviction and alarms.
+- `api/src/index.ts`: thin Worker entrypoint.
+
+Previously, search and the Jev client lived in the browser's `src/` directory, while the Worker proxied low-level model requests. That low-level `/systemone` endpoint is removed. The simpler playground intentionally does not expose raw Jev request bodies or a live per-request trace. Search results still include logical request count, token usage, rounds and pages explored; integrators can instrument the Effect service boundaries/spans.
 
 ## Local development
 
-Requires Bun 1.4.4 or newer.
+Install **Node.js 24+** and **pnpm 10.34.9** (pinned in `packageManager`). If using Corepack, run `corepack enable` first.
 
 ```sh
-bun install --frozen-lockfile
-bun run check
-bun run worker:dev
+pnpm install --frozen-lockfile
+pnpm check
+pnpm dev
 ```
 
-In another terminal:
+Open **http://localhost:5173**. Vite proxies `/api` to Wrangler on port 8787. The dev command builds the shared catalog, core library and initial static assets, then watches both packages, the Worker and React app in parallel. You can also open port 8787 for the last built SPA (without Vite HMR).
 
-```sh
-bun run build
-bun run dev
+- `pnpm typecheck`: builds shared/core declarations and checks all packages.
+- `pnpm test`: Node's native test runner executes TypeScript directly, including real workerd/SQLite integration tests via Miniflare. Synthetic Jev responses only: **no API key or paid calls**.
+- `pnpm build`: builds shared JS/declarations first, then the core, Vite assets, and a Wrangler deployment dry run.
+- `pnpm check`: all of the above.
+
+Node executes `.ts` test files without Bun, ts-node or tsx. The library also builds distributable JavaScript because Node does not strip TypeScript inside published `node_modules` packages. Cloudflare code runs in **workerd**, not Node.
+
+## HTTP API
+
+Both endpoints require `?docs=typesafe|telegram|cloudflare` to select a registered documentation source. Questions are only sent in POST bodies; keys are only sent in Authorization headers. Responses use `Cache-Control: no-store`.
+
+### Browse
+
+```http
+GET /api/page?docs=typesafe
 ```
 
-Open `http://localhost:3000`. Wrangler runs the Worker at `http://localhost:8787` and stores development SQLite data under the ignored `.wrangler/` directory. Enter your key in the browser; no `.env` file is needed.
+An optional `url` selects a page on the selected source's exact origin; omitting it browses that source's registered index. For example, `GET /api/page?docs=typesafe&url=https%3A%2F%2Fdocs.typesafe.ai%2Fllms.txt`.
 
-## Deploy
+Returns `{ url, content, links: [{ url, text }], toc }`. The returned URL reflects redirects/Markdown alternatives; links resolve against that URL. Only approved links on the selected documentation origin are listed.
 
-### 1. Cloudflare Worker and SQLite Durable Object
+### Search
 
-```sh
-bunx wrangler login
-bun run worker:deploy
+```http
+POST /api/search?docs=typesafe
+Authorization: Bearer <visitor-key>
+Content-Type: application/json
+
+{"query":"How do retries work?","budget":0.02,"model":"jev-latest"}
 ```
 
-The `v1` migration provisions `HttpCacheObject` with SQLite storage. `ALLOWED_ORIGINS` and `DOCS_HOSTS` in `wrangler.jsonc` are public configuration, not credentials. Set exact approved origins and documentation hosts before deployment. No TypeSafe secret is configured in Cloudflare or GitHub. Check Cloudflare's current plan limits and billing settings before exposing the Worker.
+Search always starts at the selected source's registered index, not the currently browsed page. Omit `url`; if provided, it must exactly equal that registered index URL. A different page URL is rejected even on the same origin.
 
-Worker deployments are manual. Cloudflare credentials remain on the deploying machine; do not commit them or upload them as Pages artifacts.
+Returns `Search.Result`: passages, pages, rounds, answer confidence, stop reason, model and usage. The API allows `jev-latest`/`jev-preview`, queries up to 4,000 characters and estimated budgets above $0 and at most $1. Errors are `{ error: string }` with an appropriate HTTP status. Contracts live in `api/src/contracts.ts`; the playground imports those contracts **as types only**, and imports the shared catalog at runtime.
 
-### 2. GitHub Pages
+A search is one synchronous HTTP request, not a persisted job. Reloading closes the UI connection; **do not assume disconnecting cancels work or prevents already-started charges**. There is no resumable search/job storage.
 
-1. Set the repository **Actions variable** `PUBLIC_WORKER_URL` to the deployed Worker origin, e.g. `https://ask-jev-api.<your-subdomain>.workers.dev`. This URL is public.
-2. Set **Settings → Pages → Source** to **GitHub Actions**.
-3. Push to `main` or run **Deploy Pages** in Actions.
+## Deploy to Cloudflare
 
-The workflow installs from the lockfile, checks types, runs tests, builds only the frontend into `site/`, and uploads **only `site/`**. It never uploads the source tree, local SQLite files, Wrangler state, or environment files. Deployment fails if a production Worker URL has not been configured.
+The React SPA and API deploy together as **one Cloudflare Worker with static assets**, on the same origin. GitHub Pages and `PUBLIC_WORKER_URL` are no longer used.
 
-## Layout
+1. Review `api/wrangler.jsonc`:
+   - Documentation sources come from `shared/src/index.ts`, not environment host configuration.
+   - `ALLOWED_ORIGINS`: optional additional exact origins; the deployment's own origin is always accepted. The initial extra origin is the Vite development server.
+   - Worker `name`, custom domains/routes and rate limits as needed.
+2. Authenticate and deploy:
 
-- `src/`: browser UI, Markdown processing, best-first documentation search, and HTTP caching helpers.
-- `worker/index.ts`: constrained Jev gateway and SQLite-backed Durable Object.
-- `worker/security.ts`: target validation, shared-cache restrictions, and body limits.
-- `scripts/`: frontend build and local static server.
-- `.github/workflows/pages.yml`: frontend checks and Pages deployment.
+   ```sh
+   pnpm --filter api exec wrangler login
+   pnpm run deploy
+   ```
 
-All tests use synthetic data and mock Jev responses; running them does not use an API key or spend TypeSafe credits.
+3. Open the deployed Worker URL. No TypeSafe secret is configured in Cloudflare: every visitor enters their own key.
+
+`pnpm run deploy` runs checks/builds and deploys the SPA, API and Durable Object together. `assets.run_worker_first` reserves `/api/*` for the Worker; other routes serve the SPA with client-side routing fallback. Production security headers live in `playground/public/_headers`.
+
+The Worker name, `HTTP_CACHE` binding, `HttpCacheObject` class, `v1` SQLite migration and per-host object names are preserved. Routing still uses `idFromName(new URL(source.indexUrl).hostname)`; documentation IDs select catalog entries, never cache identities. **Deploying to the same Cloudflare account and Worker retains existing public-document caches; do not delete or reset the migration.** Local Wrangler state now lives under `api/.wrangler/`; old root `.wrangler/` data is not automatically moved. The old GitHub Pages frontend will no longer be compatible with this API; disable Pages in repository settings after deploying.
+
+### GitHub Actions
+
+- **Check** runs frozen-lockfile installation, typechecks, Node tests and builds on pushes/PRs.
+- **Deploy Cloudflare** is manual (`workflow_dispatch`). Configure `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the GitHub **production** environment, with permissions to deploy Workers, static assets and Durable Objects. Use environment protection rules if desired. No TypeSafe key belongs in CI.
+
+Alternatively, use Cloudflare's Git integration with the repository root as the build root, `pnpm build` as the build command and `pnpm --filter api run deploy` as the deploy command.
+
+## Privacy and security
+
+- Visitor keys stay in React/tab memory only: not URLs, local/session storage, cookies or SQLite. They are sent over HTTPS to this server and then only to the fixed TypeSafe endpoint. The operator is part of the trust boundary; use a dedicated limited-spend key.
+- Questions, selected documentation and Jev responses are transient. **Only public documentation is persisted.** Hosting providers and TypeSafe may retain operational/request data according to their policies; application code does not log keys, prompts or request bodies. Worker observability is disabled.
+- The HTTP cache respects freshness, ETag/Last-Modified, revalidation and safe stale-on-error. Private, `no-store`, cookie-setting and credential-varying responses are not stored. Cache entries are bounded to **128 entries / 8 MB per host**, with seven-day retention and alarm/access cleanup.
+- The Worker and Durable Object independently validate the catalog selection and page URL. Documentation URLs require HTTPS, no credentials, query or fragment, and the selected source's exact origin. Every redirect/Markdown fallback must stay on that selected origin; another catalog entry's origin is not interchangeable. Caller cookies/headers are never forwarded to docs. Jev credentials go only to the fixed endpoint, with redirects rejected and upstream error bodies suppressed.
+- Origin checks, per-IP rate limits and streamed body limits reduce abuse. **CORS is not authentication**: non-browser clients can omit/spoof Origin. Limits are approximate/per Cloudflare location, not an account-wide spending or resource cap.
+- Documentation and passages render as React-escaped text, never trusted HTML. No analytics, external scripts, fonts or CDNs. Do not use confidential documentation.

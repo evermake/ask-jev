@@ -1,29 +1,20 @@
 {
-  "name": "ask-jev",
+  "name": "ask-jev-workspace",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.34.9",
+  "engines": { "node": ">=24.0.0" },
   "scripts": {
-    "build": "bun scripts/build.ts",
-    "dev": "bun scripts/serve.ts",
-    "worker:dev": "wrangler dev",
-    "worker:deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit && tsc -p worker/tsconfig.json",
-    "test": "bun test src worker",
-    "check": "bun run typecheck && bun test src worker && bun run build"
-  },
-  "dependencies": {
-    "effect": "4.0.5",
-    "mdast-util-from-markdown": "2.1.0",
-    "mdast-util-gfm": "3.1.0",
-    "mdast-util-to-string": "4.0.0",
-    "micromark-extension-gfm": "3.0.0",
-    "unist-util-visit": "5.1.0"
+    "build": "pnpm --filter @ask-jev/shared build && pnpm --filter ask-jev build && pnpm --filter playground build && pnpm --filter api build",
+    "dev": "pnpm --filter @ask-jev/shared build && pnpm --filter ask-jev build && pnpm --filter playground build && pnpm --parallel --filter @ask-jev/shared --filter ask-jev --filter api --filter playground dev",
+    "typecheck": "pnpm --filter @ask-jev/shared build && pnpm --filter ask-jev build && pnpm -r typecheck",
+    "test": "pnpm --filter @ask-jev/shared build && pnpm --filter ask-jev build && pnpm -r test",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "deploy": "pnpm check && pnpm --filter api run deploy"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20261106.1",
-    "@types/bun": "1.4.2",
-    "@types/mdast": "4.0.4",
-    "typescript": "7.0.2",
-    "wrangler": "4.158.0"
+    "@types/node": "^24.0.0",
+    "expect": "30.5.2",
+    "typescript": "7.0.2"
   }
 }
