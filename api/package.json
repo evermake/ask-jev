@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test test/*.test.ts"
   },
-  "dependencies": { "@ask-jev/shared": "workspace:*", "ask-jev": "workspace:*", "effect": "4.0.5" },
+  "dependencies": { "@ask-jev/shared": "workspace:*", "ask-jev": "workspace:*", "effect": "4.1.4" },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261106.1",
     "esbuild": "^0.27.0",

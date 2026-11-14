@@ -27,8 +27,8 @@ importers:
         specifier: workspace:*
         version: link:../ask-jev
       effect:
-        specifier: 4.0.5
-        version: 4.0.5
+        specifier: 4.1.4
+        version: 4.1.4
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 5.20261106.1
@@ -65,8 +65,8 @@ importers:
         specifier: 4.0.4
         version: 4.0.4
       effect:
-        specifier: 4.0.5
-        version: 4.0.5
+        specifier: 4.1.4
+        version: 4.1.4
 
   playground:
     dependencies:
@@ -1029,8 +1029,8 @@ packages:
   devlop@1.1.0:
     resolution: {integrity: sha512-RWmIqhcFf1lRYBvNmr7qTNuyCt/7/ns2jbpp1+PalgE/rDQcBT0fioSMUpJ93irlUhC5hrg4cYqe6U+0ImW0rA==}
 
-  effect@4.0.5:
-    resolution: {integrity: sha512-BY4/28NlpOd99yzmV741xbVGmp+1U7tks4oB7F/Png64bTa5tm5eCA6W0RiXsnuLDDoJpjfVSo4Dnq4BZb/89Q==}
+  effect@4.1.4:
+    resolution: {integrity: sha512-Tgrv/9FN+TZYyOn8XSli+fVqAfwDrDAkiX5Uu9vztINb675VTQdhD0gWI5Kzvhlh9QqzjZvw72iugqw5pwoghQ==}
 
   error-stack-parser-es@1.0.5:
     resolution: {integrity: sha512-5qucVt2XcuGMcEGgWI7i+yZpmpByQ8J1lHhcL7PwqCwu9FPP3VUXzT4ltHe5i2z9dePwEHcDVOAfSnHsOlCXRA==}
@@ -2073,7 +2073,7 @@ snapshots:
     dependencies:
       dequal: 2.0.3
 
-  effect@4.0.5: {}
+  effect@4.1.4: {}
 
   error-stack-parser-es@1.0.5: {}
 

@@ -83,11 +83,11 @@ shared ──X──> framework, Effect or application dependencies
 | Package | Runtime dependencies | Main development/build tools |
 | --- | --- | --- |
 | `shared` | None | TypeScript; Node test runner |
-| `ask-jev` | Effect **peer dependency** `^4.0.5`; mdast/micromark/unist Markdown libraries | TypeScript; Node test runner |
+| `ask-jev` | Effect **peer dependency** `^4.1.4`; mdast/micromark/unist Markdown libraries | TypeScript; Node test runner |
 | `api` | `@ask-jev/shared`; `ask-jev`; Effect | Wrangler; Cloudflare types; Miniflare/workerd and esbuild for integration tests |
 | `playground` | `@ask-jev/shared`; React; React DOM | Vite; React plugin; shared API contract types |
 
-The workspace currently develops against Effect **4.0.5**. Effect is a peer dependency of the library so an integrating application supplies a compatible version rather than receiving an independent bundled runtime. HTTP client support is imported from `effect/http`.
+The workspace currently develops against Effect **4.1.4**. Effect is a peer dependency of the library so an integrating application supplies a compatible version rather than receiving an independent bundled runtime. HTTP client support is imported from `effect/http`.
 
 ### Build and deployment relationship
 
@@ -327,7 +327,7 @@ There are three integration levels:
 Assuming the published name and peer range remain unchanged:
 
 ```sh
-pnpm add ask-jev 'effect@^4.0.5'
+pnpm add ask-jev 'effect@^4.1.4'
 ```
 
 The package is ESM with TypeScript declarations. Configure a Node application as an ES module (`"type": "module"` in its `package.json`) and use Node 24+.
