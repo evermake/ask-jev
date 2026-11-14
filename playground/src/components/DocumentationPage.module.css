@@ -1,0 +1,11 @@
+.url {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  margin: 0 0 12px;
+}
+
+.links {
+  max-height: 280px;
+  overflow: auto;
+}

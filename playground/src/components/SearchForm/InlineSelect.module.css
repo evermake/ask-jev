@@ -1,0 +1,35 @@
+.container {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: baseline;
+  font-size: .85em;
+  letter-spacing: -.04em;
+  line-height: 1.5;
+}
+
+.sizingText {
+  display: block;
+  visibility: hidden;
+  white-space: pre;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+}
+
+.select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  appearance: none;
+  padding: 5px 10px;
+  border: 1px solid var(--ink);
+  background-color: var(--surface);
+  box-shadow: inset 1px 1px #fff, inset -1px -1px #aaad9e;
+  letter-spacing: inherit;
+  line-height: inherit;
+}
+
+.select:hover:not(:disabled) {
+  background-color: var(--accent);
+}

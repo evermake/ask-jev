@@ -1,0 +1,47 @@
+.passage {
+  border-top: 1px solid #b8bbae;
+  margin-top: 22px;
+  padding-top: 20px;
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 13px;
+}
+
+.source {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.number {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.badge {
+  background: var(--accent);
+  padding: 2px 6px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.headings {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  margin: 12px 0;
+}
+
+@media (max-width: 440px) {
+  .heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+}

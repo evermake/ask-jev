@@ -1,0 +1,17 @@
+.layout {
+  max-width: 940px;
+  margin: auto;
+  padding: 88px 28px 40px;
+}
+
+@media (max-width: 700px) {
+  .layout {
+    padding: 40px 20px 28px;
+  }
+}
+
+@media (max-width: 440px) {
+  .layout {
+    padding: 24px 14px;
+  }
+}

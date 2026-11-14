@@ -1,0 +1,24 @@
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 4px 14px;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.divider {
+  color: #919582;
+}
+
+.header a {
+  display: inline-block;
+  min-height: 28px;
+  line-height: 28px;
+  color: inherit;
+  text-underline-offset: 3px;
+}
+
+.header a:hover {
+  color: #526936;
+}

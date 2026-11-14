@@ -1,0 +1,50 @@
+.window {
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 4px 4px 0 #a7aa9a;
+  margin-top: 28px;
+}
+
+.titleBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 5px 12px;
+  color: var(--paper);
+  background: var(--ink);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.body {
+  padding: 24px;
+}
+
+.loading {
+  background: var(--surface);
+}
+
+.error .titleBar {
+  background: #744434;
+}
+
+.error .body {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 440px) {
+  .titleBar {
+    gap: 8px;
+  }
+
+  .body {
+    padding: 16px;
+  }
+}

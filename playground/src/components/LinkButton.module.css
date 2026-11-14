@@ -1,0 +1,15 @@
+button.link {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: none;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+
+button.link:hover:not(:disabled) {
+  color: #526936;
+  background: none;
+}

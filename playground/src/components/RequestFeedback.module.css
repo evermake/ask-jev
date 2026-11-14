@@ -1,0 +1,57 @@
+.message {
+  font-size: 13px;
+}
+
+.progressTrack {
+  --block-count: 32;
+  --active-blocks: 4;
+  --block-gap: 3px;
+  --travel-steps: calc(var(--block-count) - var(--active-blocks));
+
+  border: 1px solid var(--ink);
+  padding: 3px;
+  height: 22px;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.progressGrid {
+  position: relative;
+  height: 100%;
+}
+
+.progressBlocks {
+  position: absolute;
+  display: grid;
+  grid-template-columns: repeat(var(--active-blocks), minmax(0, 1fr));
+  gap: var(--block-gap);
+  width: calc(
+    (100% + var(--block-gap)) * var(--active-blocks) / var(--block-count)
+    - var(--block-gap)
+  );
+  height: 100%;
+  /* Hold every slot, including both endpoints, before reversing. */
+  animation: searching calc((var(--travel-steps) + 1) * 90ms)
+    steps(calc(var(--travel-steps) + 1), jump-none) infinite alternate;
+}
+
+.progressBlocks span {
+  background: var(--ink);
+}
+
+@keyframes searching {
+  from {
+    left: 0;
+  }
+
+  to {
+    left: calc((100% + var(--block-gap)) * var(--travel-steps) / var(--block-count));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progressBlocks {
+    animation: none;
+    opacity: .5;
+  }
+}

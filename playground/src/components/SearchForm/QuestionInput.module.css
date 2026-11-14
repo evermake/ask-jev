@@ -1,0 +1,27 @@
+.input {
+  display: block;
+  width: 100%;
+  border: 1px solid #818577;
+  background: #fffefb;
+  box-shadow: inset 2px 2px #e6e7dd;
+  padding: 12px 18px;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+.characterCount {
+  display: block;
+  margin-top: 6px;
+  text-align: right;
+  color: var(--muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+@media (max-width: 440px) {
+  .input {
+    font-size: 16px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}

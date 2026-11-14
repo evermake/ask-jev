@@ -1,0 +1,13 @@
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.pageStatus {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

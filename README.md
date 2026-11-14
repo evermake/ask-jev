@@ -66,6 +66,8 @@ pnpm dev
 
 Open **http://localhost:5173**. Vite proxies `/api` to Wrangler on port 8787. The dev command builds the shared catalog, core library and initial static assets, then watches both packages, the Worker and React app in parallel. You can also open port 8787 for the last built SPA (without Vite HMR).
 
+Both `localhost:5173` and `127.0.0.1:5173` are allowed local frontend origins. The frontend alone is not enough for browsing or searching: the API must also be running on port 8787. If you already started `pnpm --filter playground dev`, start the backend separately with `pnpm --filter @ask-jev/api dev`. An empty or non-JSON `/api` response usually means the backend is unavailable; do not retry paid searches automatically.
+
 - `pnpm typecheck`: builds shared/core declarations and checks all packages.
 - `pnpm test`: Node's native test runner executes TypeScript directly, including real workerd/SQLite integration tests via Miniflare. Synthetic Jev responses only: **no API key or paid calls**.
 - `pnpm build`: builds shared JS/declarations first, then the core, Vite assets, and a Wrangler deployment dry run.
