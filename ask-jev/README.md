@@ -65,6 +65,8 @@ console.log(Search.format(result))
 
 To add tracing, wrap `SystemOne.evaluate`, `DocsTransport.get` or `CacheStorage` in your own layer and/or supply an Effect tracer. The built-in client creates a `SystemOne.evaluate` span with a question count and disables outgoing trace headers. Never annotate/log keys or prompt bodies unless you explicitly intend to disclose them. Search's `usage.requests` counts successful logical evaluations; it is not a billing ledger.
 
+Search results include `duration: { totalMs, jevMs, restMs }`. These are elapsed milliseconds measured with a monotonic clock during core search execution. Jev time counts the union of all active logical model evaluations, including judging, so concurrent calls count only once. Rest is total minus Jev. Total includes documentation loading and processing, but excludes application setup, response serialization and browser/network latency.
+
 ## Development / future npm release
 
 From the workspace root:

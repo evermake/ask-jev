@@ -283,7 +283,12 @@ Public options are currently `budget` (default **$0.02**) and `model`. Page/conc
 | `stopped` | `answered`, `exhausted`, `budget` or `max-pages` |
 | `pages`, `rounds` | Traversal history, remaining links and progress by round |
 | `usage` | Successful logical evaluation count, input tokens and calculated cost |
+| `duration` | Core search elapsed milliseconds: `totalMs`, `jevMs` and `restMs` |
 | `model` | Last reported model ID; may be empty if no evaluation ran and no model was supplied |
+
+Duration uses a monotonic clock per search. `jevMs` is the union of model-evaluation intervals across all concurrent pages and windows, including answer judging; overlaps count once and gaps do not count. `restMs = totalMs - jevMs`, including documentation work and processing when no evaluation is active. Total excludes Worker/layer setup, response serialization and browser/network latency. Model timing surrounds the logical `SystemOne.evaluate` operation, not provider-only inference.
+
+These are runtime-observed durations: Cloudflare Workers advance their clock after I/O, so CPU-only processing may register as zero. Zero values are valid; this metric is not a CPU profiler.
 
 `Search.format(result)` produces compact Markdown for an agent or CLI. It **does not generate an answer**. Passage offsets refer to the content supplied to search, which the `Docs` facade may normalize; do not apply them blindly to raw downloaded bytes.
 

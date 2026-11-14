@@ -52,7 +52,7 @@ To add documentation, add one `{ id, label, indexUrl }` entry in **`shared/src/i
 - `api/src/cache.ts`: Cloudflare SQLite storage adapter, retention, eviction and alarms.
 - `api/src/index.ts`: thin Worker entrypoint.
 
-Previously, search and the Jev client lived in the browser's `src/` directory, while the Worker proxied low-level model requests. That low-level `/systemone` endpoint is removed. The simpler playground intentionally does not expose raw Jev request bodies or a live per-request trace. Search results still include logical request count, token usage, rounds and pages explored; integrators can instrument the Effect service boundaries/spans.
+Previously, search and the Jev client lived in the browser's `src/` directory, while the Worker proxied low-level model requests. That low-level `/systemone` endpoint is removed. The simpler playground intentionally does not expose raw Jev request bodies or a live per-request trace. Search results still include logical request count, token usage, duration, rounds and pages explored; integrators can instrument the Effect service boundaries/spans.
 
 ## Local development
 
@@ -102,6 +102,10 @@ Content-Type: application/json
 Search always starts at the selected source's registered index, not the currently browsed page. Omit `url`; if provided, it must exactly equal that registered index URL. A different page URL is rejected even on the same origin.
 
 Returns `Search.Result`: passages, pages, rounds, answer confidence, stop reason, model and usage. The API allows `jev-latest`/`jev-preview`, queries up to 4,000 characters and estimated budgets above $0 and at most $1. Errors are `{ error: string }` with an appropriate HTTP status. Contracts live in `api/src/contracts.ts`; the playground imports those contracts **as types only**, and imports the shared catalog at runtime.
+
+Results also include `duration: { totalMs, jevMs, restMs }`, in milliseconds. Total measures core search execution, including documentation loading and processing, but excludes Worker setup, response serialization and browser/network latency. Jev measures time with at least one model evaluation active: two overlapping one-second calls count as one second, not two. Rest is total minus Jev; these values measure elapsed time, not CPU time or provider-only inference time.
+
+Timing precision depends on the runtime. Cloudflare Workers advance their clock after I/O, so CPU-only work may register as zero milliseconds.
 
 A search is one synchronous HTTP request, not a persisted job. Reloading closes the UI connection; **do not assume disconnecting cancels work or prevents already-started charges**. There is no resumable search/job storage.
 

@@ -31,13 +31,6 @@
   white-space: nowrap;
 }
 
-.headings {
-  color: var(--muted);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-  margin: 12px 0;
-}
-
 @media (max-width: 440px) {
   .heading {
     align-items: flex-start;

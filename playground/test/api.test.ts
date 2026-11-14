@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, afterEach, beforeEach, mock, test } from 'node:test'
+import type { SearchResult } from '@ask-jev/api/contracts'
 import { loadDocumentation, searchDocumentation } from '../src/api.ts'
 
 const origin = 'https://ask-jev.example'
@@ -58,8 +59,18 @@ test('encodes an explicit documentation page in the browse URL', async () => {
   assert.equal(endpoint.searchParams.get('url'), pageUrl)
 })
 
-test('searches with a fixed budget and keeps the key and question out of the URL', async () => {
-  const result = { passages: [], model: 'jev-preview' }
+test('searches with a fixed budget, preserves duration, and keeps the key and question out of the URL', async () => {
+  const result = {
+    query: 'How do retries work?',
+    answered: 0.9,
+    stopped: 'answered',
+    pages: [],
+    passages: [],
+    rounds: [],
+    usage: { requests: 2, inputTokens: 1200, cost: 0.0012 },
+    duration: { totalMs: 2400, jevMs: 1800, restMs: 600 },
+    model: 'jev-preview',
+  } satisfies SearchResult
   const fetch = mock.method(globalThis, 'fetch', async () => Response.json(result))
   const signal = new AbortController().signal
 

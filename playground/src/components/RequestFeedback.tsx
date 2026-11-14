@@ -34,11 +34,7 @@ export function RequestFeedback({ busy, error }: RequestFeedbackProps) {
               </div>
             </div>
           </div>
-          <small>
-            {searching
-              ? 'This can take a little while. No automatic retries or duplicate requests.'
-              : 'Public pages are cached for the next reader.'}
-          </small>
+          {!searching && <small>Public pages are cached for the next reader.</small>}
         </Window>
       )}
       {error && (

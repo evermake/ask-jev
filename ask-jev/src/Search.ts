@@ -15,7 +15,7 @@
  *
  * Each block and link is rated by its own yes/no question, so ratings are comparable across pages.
  */
-import { Duration, Effect, Result as R } from 'effect'
+import { Clock, Duration as EffectDuration, Effect, Result as R } from 'effect'
 import type * as DocsResolver from './DocsResolver.ts'
 import * as Markdown from './Markdown.ts'
 import * as PagePath from './PagePath.ts'
@@ -85,6 +85,15 @@ export interface Usage {
   readonly cost: number
 }
 
+export interface Duration {
+  /** Elapsed core search execution, including docs loading and final passage selection. */
+  readonly totalMs: number
+  /** Elapsed time with at least one Jev evaluation running; overlapping requests count once. */
+  readonly jevMs: number
+  /** Core search time outside Jev evaluations (`totalMs - jevMs`). */
+  readonly restMs: number
+}
+
 export interface Result {
   readonly query: string
   /** Probability that the passages found answer the query. */
@@ -96,6 +105,7 @@ export interface Result {
   readonly passages: ReadonlyArray<Passage>
   readonly rounds: ReadonlyArray<Round>
   readonly usage: Usage
+  readonly duration: Duration
   /** Versioned ID of the model that answered. */
   readonly model: string
 }
@@ -330,8 +340,22 @@ export const search = Effect.fnUntraced(function* (
   DocsResolver.DocsResolverError | SystemOne.SystemOneError,
   SystemOne.SystemOne
 > {
+  const clock = yield* Clock.Clock
+  const started = clock.monotonicTimeNanosUnsafe()
   const systemOne = yield* SystemOne.SystemOne
   const budget = options.budget ?? defaults.budget
+
+  // Synchronous transitions keep the union of concurrent evaluations without counting idle gaps.
+  // These effects and their state are fresh each time the search effect is executed.
+  let activeRequests = 0
+  let activeSince = 0n
+  let jevNanos = 0n
+  const beginEvaluation = Effect.sync(() => {
+    if (activeRequests++ === 0) activeSince = clock.monotonicTimeNanosUnsafe()
+  })
+  const endEvaluation = Effect.sync(() => {
+    if (--activeRequests === 0) jevNanos += clock.monotonicTimeNanosUnsafe() - activeSince
+  })
 
   let requests = 0
   let inputTokens = 0
@@ -342,7 +366,11 @@ export const search = Effect.fnUntraced(function* (
   const estimate = (chars: number) =>
     chars * (charsSent > 0 ? inputTokens / charsSent : TOKENS_PER_CHAR) * SystemOne.PRICE_PER_TOKEN
   const evaluate = (request: SystemOne.Request) =>
-    systemOne.evaluate({ ...request, ...(options.model ? { model: options.model } : {}) }).pipe(
+    Effect.acquireUseRelease(
+      beginEvaluation,
+      () => systemOne.evaluate({ ...request, ...(options.model ? { model: options.model } : {}) }),
+      () => endEvaluation,
+    ).pipe(
       Effect.timed,
       Effect.flatMap(([duration, response]) => {
         requests += 1
@@ -353,7 +381,7 @@ export const search = Effect.fnUntraced(function* (
           'System One request',
           `${Object.keys(request.questions).length} questions`,
           `${response.usage.input_tokens} tokens`,
-          Duration.format(duration),
+          EffectDuration.format(duration),
         ).pipe(Effect.as(response))
       }),
     )
@@ -523,7 +551,7 @@ export const search = Effect.fnUntraced(function* (
     }
   }
 
-  return {
+  const result = {
     query,
     answered,
     stopped,
@@ -536,6 +564,9 @@ export const search = Effect.fnUntraced(function* (
     usage: { requests, inputTokens, cost: cost() },
     model,
   }
+  const totalMs = Number(clock.monotonicTimeNanosUnsafe() - started) / 1_000_000
+  const jevMs = Number(jevNanos) / 1_000_000
+  return { ...result, duration: { totalMs, jevMs, restMs: totalMs - jevMs } }
 })
 
 /**

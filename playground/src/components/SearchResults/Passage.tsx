@@ -17,7 +17,11 @@ export function Passage({ passage, number, disabled, onOpenPage }: PassageProps)
           <span className={styles.number} aria-hidden="true">
             {String(number).padStart(2, '0')}
           </span>
-          <LinkButton disabled={disabled} onClick={() => onOpenPage(passage.path)}>
+          <LinkButton
+            disabled={disabled}
+            onClick={() => onOpenPage(passage.path)}
+            title={passage.headings.length > 0 ? passage.headings.join(' › ') : undefined}
+          >
             {passage.path}
           </LinkButton>
         </div>
@@ -25,9 +29,6 @@ export function Passage({ passage, number, disabled, onOpenPage }: PassageProps)
           {Math.round(passage.relevance * 100)}% relevance
         </span>
       </div>
-      {passage.headings.length > 0 && (
-        <p className={styles.headings}>{passage.headings.join(' › ')}</p>
-      )}
       <pre>{passage.text}</pre>
     </article>
   )

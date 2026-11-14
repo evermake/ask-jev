@@ -1,5 +1,6 @@
 import { test, before } from 'node:test'
 import assert from 'node:assert/strict'
+import { setTimeout as delay } from 'node:timers/promises'
 import { build } from 'esbuild'
 import { convertV4MiniflareOptions, Miniflare, Response, type Request as MfRequest } from 'miniflare'
 import type { PageResult, SearchResult } from '../src/contracts.ts'
@@ -50,6 +51,16 @@ async function setup(upstream: (request: MfRequest) => Promise<Response>, limit 
 }
 
 const docsPath = '/api/page?docs=typesafe'
+
+function assertSearchDuration(result: SearchResult) {
+  const { duration } = result
+  assert.deepEqual(Object.keys(duration).sort(), ['jevMs', 'restMs', 'totalMs'])
+  for (const value of Object.values(duration)) {
+    assert.ok(Number.isFinite(value) && value >= 0, 'Durations are finite, nonnegative milliseconds')
+  }
+  assert.ok(duration.jevMs <= duration.totalMs)
+  assert.ok(Math.abs(duration.totalMs - duration.jevMs - duration.restMs) < 0.000001)
+}
 
 test('real DO SQLite caches, survives eviction, revalidates and never forwards browser credentials', async (t) => {
   let calls = 0
@@ -120,6 +131,7 @@ test('search runs entirely in the DO, accepts >255 questions, and persists only 
     keys.push(request.headers.get('authorization')!)
     const body = await request.json() as { questions: Record<string, unknown> }
     counts.push(Object.keys(body.questions).length)
+    await delay(20)
     return Response.json({ model: 'jev-test', answers: Object.fromEntries(Object.keys(body.questions).map((id) => [id, { type: 'noul', noul: 0.95 }])), usage: { input_tokens: 100, output_tokens: 0 } })
   })
   t.after(() => mf.dispose())
@@ -129,14 +141,39 @@ test('search runs entirely in the DO, accepts >255 questions, and persists only 
   assert.equal(result.stopped, 'answered')
   assert.ok(result.passages.length > 0)
   assert.equal(result.usage.requests, 2)
+  assertSearchDuration(result)
+  assert.ok(result.duration.jevMs > 0, 'Delayed upstream evaluations contribute elapsed time')
   assert.equal(counts[0], 302)
   assert.deepEqual(keys, ['Bearer synthetic-test-key', 'Bearer synthetic-test-key'])
   // A later visitor gets a fresh client/key, but uses the same public-docs cache.
-  assert.equal((await search({ query: 'another-question' }, 'another-synthetic-key')).status, 200)
+  const nextResponse = await search({ query: 'another-question' }, 'another-synthetic-key')
+  assert.equal(nextResponse.status, 200)
+  assertSearchDuration(await nextResponse.json() as SearchResult)
   assert.deepEqual(keys.slice(2), ['Bearer another-synthetic-key', 'Bearer another-synthetic-key'])
   assert.equal(docsCalls, 1)
   const persisted = JSON.stringify(await (await storage()).exec('SELECT * FROM entries'))
   for (const privateValue of ['synthetic-test-key', 'another-synthetic-key', 'synthetic-private-question', 'another-question', 'jev-test']) assert.ok(!persisted.includes(privateValue))
+})
+
+test('search duration is entirely rest when the budget prevents model evaluations', async (t) => {
+  let jevCalls = 0
+  const { mf, search } = await setup(async (request) => {
+    if (new URL(request.url).hostname !== 'api.typesafe.ai') {
+      return new Response('# Public docs\n\nSynthetic documentation.')
+    }
+    jevCalls++
+    return new Response('Unexpected model request', { status: 500 })
+  })
+  t.after(() => mf.dispose())
+  const response = await search({ query: 'Synthetic question', budget: 0.000001 })
+  assert.equal(response.status, 200, await response.clone().text())
+  const result = await response.json() as SearchResult
+  assertSearchDuration(result)
+  assert.equal(result.stopped, 'budget')
+  assert.equal(result.usage.requests, 0)
+  assert.equal(result.duration.jevMs, 0)
+  assert.equal(result.duration.restMs, result.duration.totalMs)
+  assert.equal(jevCalls, 0)
 })
 
 test('validates search input and credentials before spending; hides upstream error bodies and redirects', async (t) => {
@@ -156,6 +193,7 @@ test('validates search input and credentials before spending; hides upstream err
   assert.equal(jevCalls, 0)
   const response = await search()
   assert.equal(response.status, 502)
+  assert.deepEqual(Object.keys(await response.clone().json() as object), ['error'])
   assert.ok(!(await response.text()).includes('sensitive-upstream-details'))
   redirect = true
   assert.equal((await search()).status, 502)
@@ -258,6 +296,7 @@ test('each source searches its fixed registry index with a request-local synthet
     for (const url of [undefined, source.indexUrl]) {
       const response = await search({ query: 'Synthetic question' }, 'synthetic-test-key', source.id, url)
       assert.equal(response.status, 200, await response.clone().text())
+      assertSearchDuration(await response.json() as SearchResult)
     }
   }
   assert.deepEqual(docsCalls, DOCS.map((source) => source.indexUrl))
