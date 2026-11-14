@@ -10,7 +10,11 @@
   },
   "compatibility_date": "2026-11-06",
   "compatibility_flags": ["enable_request_signal"],
-  "workers_dev": true,
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    { "pattern": "ask-jev.evermake.me", "custom_domain": true }
+  ],
   "secrets": { "required": ["OPENROUTER_API_KEY"] },
   "vars": {
     "ALLOWED_ORIGINS": "http://localhost:5173,http://127.0.0.1:5173",
