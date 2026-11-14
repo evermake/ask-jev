@@ -18,7 +18,6 @@ type LoadDocumentationRequest = DocumentationRequest & {
 
 type SearchDocumentationRequest = DocumentationRequest & {
   question: SearchQuestion
-  apiKey: string
 }
 
 async function request<A>(
@@ -69,14 +68,12 @@ export function searchDocumentation({
   docs,
   signal,
   question,
-  apiKey,
 }: SearchDocumentationRequest): Promise<SearchResult> {
   return request<SearchResult>('search', docs, {
     method: 'POST',
     signal,
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       query: question.query,

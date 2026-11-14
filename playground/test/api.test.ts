@@ -59,7 +59,7 @@ test('encodes an explicit documentation page in the browse URL', async () => {
   assert.equal(endpoint.searchParams.get('url'), pageUrl)
 })
 
-test('searches with a fixed budget, preserves duration, and keeps the key and question out of the URL', async () => {
+test('searches without a key, authorization, or cookies using the fixed estimated budget', async () => {
   const result = {
     query: 'How do retries work?',
     answered: 0.9,
@@ -78,7 +78,6 @@ test('searches with a fixed budget, preserves duration, and keeps the key and qu
     docs: 'telegram',
     signal,
     question: { query: 'How do retries work?', model: 'jev-preview' },
-    apiKey: 'synthetic-test-key',
   }), result)
 
   const [url, options] = fetch.mock.calls[0]!.arguments
@@ -89,8 +88,10 @@ test('searches with a fixed budget, preserves duration, and keeps the key and qu
   assert.equal(options?.signal, signal)
   assert.deepEqual(options?.headers, {
     'content-type': 'application/json',
-    authorization: 'Bearer synthetic-test-key',
   })
+  const headers = new Headers(options?.headers)
+  assert.equal(headers.has('authorization'), false)
+  assert.equal(headers.has('cookie'), false)
   assert.deepEqual(JSON.parse(String(options?.body)), {
     query: 'How do retries work?',
     budget: 0.02,
@@ -109,7 +110,6 @@ test('surfaces API errors without automatically retrying', async () => {
       docs: 'typesafe',
       signal: new AbortController().signal,
       question: { query: 'Timeouts?', model: 'jev-latest' },
-      apiKey: 'synthetic-test-key',
     }),
     { message: 'Too many requests.' },
   )

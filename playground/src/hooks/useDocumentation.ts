@@ -13,7 +13,6 @@ type DocumentationRequest =
   | {
       kind: 'search'
       question: SearchQuestion
-      apiKey: string
     }
 
 export function useDocumentation() {
@@ -70,7 +69,6 @@ export function useDocumentation() {
           docs: source.id,
           signal: controller.signal,
           question: request.question,
-          apiKey: request.apiKey,
         })
         if (!controller.signal.aborted && active.current === controller) {
           setResult(next)
@@ -92,8 +90,8 @@ export function useDocumentation() {
     void run({ kind: 'page', url })
   }
 
-  function search(question: SearchQuestion, apiKey: string): void {
-    void run({ kind: 'search', question, apiKey })
+  function search(question: SearchQuestion): void {
+    void run({ kind: 'search', question })
   }
 
   return {

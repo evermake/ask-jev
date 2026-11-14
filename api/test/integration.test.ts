@@ -17,6 +17,12 @@ before(async () => {
           if (request.headers.has('x-test-forbid-routing')) {
             env = { ...env, HTTP_CACHE: { idFromName() { throw new Error('Unexpected DO routing'); } } };
           }
+          if (request.headers.has('x-test-cancel-on-model')) {
+            const controller = new AbortController();
+            const response = api.fetch(new Request(request, { signal: controller.signal }), env);
+            void fetch('https://cancellation.test/ready').then(() => controller.abort());
+            return response;
+          }
           return api.fetch(request, env);
         } };`,
       resolveDir: process.cwd(), sourcefile: 'integration-worker.ts',
@@ -29,12 +35,21 @@ before(async () => {
 })
 
 const origin = 'https://playground.example'
-async function setup(upstream: (request: MfRequest) => Promise<Response>, limit = 120) {
+async function setup(
+  upstream: (request: MfRequest) => Promise<Response>,
+  limit = 120,
+  options: { apiKey?: string; searchLimit?: number; demoLimit?: number } = {},
+) {
   const mf = new Miniflare({ ...convertV4MiniflareOptions({
     name: 'api', modules: true, script, compatibilityDate: '2026-11-06',
+    compatibilityFlags: ['enable_request_signal'],
     durableObjects: { HTTP_CACHE: { className: 'HttpCacheObject', useSQLite: true } },
-    bindings: { ALLOWED_ORIGINS: origin },
-    ratelimits: { REQUEST_LIMITER: { namespace_id: '538561', simple: { limit, period: 60 } } },
+    bindings: { ALLOWED_ORIGINS: origin, OPENROUTER_API_KEY: options.apiKey ?? 'synthetic-operator-key' },
+    ratelimits: {
+      REQUEST_LIMITER: { namespace_id: '538561', simple: { limit, period: 60 } },
+      SEARCH_LIMITER: { namespace_id: '538562', simple: { limit: options.searchLimit ?? 1000, period: 60 } },
+      DEMO_LIMITER: { namespace_id: '538563', simple: { limit: options.demoLimit ?? 1000, period: 60 } },
+    },
     outboundService: upstream,
   }), unsafeInspectDurableObjects: true })
   try { await mf.ready } catch (error) { await mf.dispose(); throw error }
@@ -42,8 +57,8 @@ async function setup(upstream: (request: MfRequest) => Promise<Response>, limit 
     ...init,
     headers: { origin, ...Object.fromEntries(new Headers(init.headers)) },
   })
-  const search = (body: unknown = { query: 'What is documented?' }, key = 'synthetic-test-key', docs = 'typesafe', url?: string, headers: Record<string, string> = {}) => request(`/api/search?${new URLSearchParams({ docs, ...(url === undefined ? {} : { url }) })}`, {
-    method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json', ...headers },
+  const search = (body: unknown = { query: 'What is documented?' }, key = '', docs = 'typesafe', url?: string, headers: Record<string, string> = {}) => request(`/api/search?${new URLSearchParams({ docs, ...(url === undefined ? {} : { url }) })}`, {
+    method: 'POST', headers: { ...(key ? { authorization: `Bearer ${key}` } : {}), 'content-type': 'application/json', ...headers },
     body: JSON.stringify(body),
   })
   const storage = (name = 'docs.typesafe.ai') => mf.unsafeGetDurableObjectStorage('api', 'HttpCacheObject', { name })
@@ -114,7 +129,7 @@ test('a forbidden redirect fails even when a stale cache entry exists', async (t
   assert.equal(calls, 2)
 })
 
-test('search runs entirely in the DO, accepts >255 questions, and persists only docs', async (t) => {
+test('public search uses only the operator OpenRouter secret, accepts >255 questions, and persists only docs', async (t) => {
   const keys: string[] = []
   const counts: number[] = []
   const content = '# Public docs\n\n' + Array.from({ length: 150 }, (_, i) => `- [Guide ${i}](/guide-${i}.md): guide`).join('\n')
@@ -125,14 +140,14 @@ test('search runs entirely in the DO, accepts >255 questions, and persists only 
       assert.equal(request.headers.get('authorization'), null)
       return new Response(content, { headers: { 'cache-control': 'public, max-age=60' } })
     }
-    assert.equal(request.url, 'https://api.typesafe.ai/v1/systemone')
+    assert.equal(request.url, 'https://openrouter.ai/api/v1/systemone')
     assert.equal(request.headers.get('cookie'), null)
     assert.equal(request.headers.get('traceparent'), null)
     keys.push(request.headers.get('authorization')!)
     const body = await request.json() as { questions: Record<string, unknown> }
     counts.push(Object.keys(body.questions).length)
     await delay(20)
-    return Response.json({ model: 'jev-test', answers: Object.fromEntries(Object.keys(body.questions).map((id) => [id, { type: 'noul', noul: 0.95 }])), usage: { input_tokens: 100, output_tokens: 0 } })
+    return Response.json({ model: 'typesafe/jev-test', answers: Object.fromEntries(Object.keys(body.questions).map((id) => [id, { type: 'noul', noul: 0.95 }])), usage: { input_tokens: 100, output_tokens: 0, cost: 0.0000123 } })
   })
   t.after(() => mf.dispose())
   const response = await search({ query: 'synthetic-private-question', budget: 0.02 })
@@ -141,24 +156,26 @@ test('search runs entirely in the DO, accepts >255 questions, and persists only 
   assert.equal(result.stopped, 'answered')
   assert.ok(result.passages.length > 0)
   assert.equal(result.usage.requests, 2)
+  assert.equal(result.usage.cost, 0.0000246)
   assertSearchDuration(result)
   assert.ok(result.duration.jevMs > 0, 'Delayed upstream evaluations contribute elapsed time')
   assert.equal(counts[0], 302)
-  assert.deepEqual(keys, ['Bearer synthetic-test-key', 'Bearer synthetic-test-key'])
-  // A later visitor gets a fresh client/key, but uses the same public-docs cache.
-  const nextResponse = await search({ query: 'another-question' }, 'another-synthetic-key')
+  assert.deepEqual(keys, ['Bearer synthetic-operator-key', 'Bearer synthetic-operator-key'])
+  // Caller credentials never override the secret; a later visitor shares only public docs.
+  const nextResponse = await search({ query: 'another-question' }, 'another-synthetic-key', 'typesafe', undefined, { cookie: 'private=synthetic' })
   assert.equal(nextResponse.status, 200)
   assertSearchDuration(await nextResponse.json() as SearchResult)
-  assert.deepEqual(keys.slice(2), ['Bearer another-synthetic-key', 'Bearer another-synthetic-key'])
+  assert.deepEqual(keys.slice(2), ['Bearer synthetic-operator-key', 'Bearer synthetic-operator-key'])
   assert.equal(docsCalls, 1)
   const persisted = JSON.stringify(await (await storage()).exec('SELECT * FROM entries'))
-  for (const privateValue of ['synthetic-test-key', 'another-synthetic-key', 'synthetic-private-question', 'another-question', 'jev-test']) assert.ok(!persisted.includes(privateValue))
+  for (const privateValue of ['synthetic-operator-key', 'another-synthetic-key', 'synthetic-private-question', 'another-question', 'jev-test']) assert.ok(!persisted.includes(privateValue))
+  assert.ok(!JSON.stringify(result).includes('synthetic-operator-key'))
 })
 
 test('search duration is entirely rest when the budget prevents model evaluations', async (t) => {
   let jevCalls = 0
   const { mf, search } = await setup(async (request) => {
-    if (new URL(request.url).hostname !== 'api.typesafe.ai') {
+    if (new URL(request.url).hostname !== 'openrouter.ai') {
       return new Response('# Public docs\n\nSynthetic documentation.')
     }
     jevCalls++
@@ -176,7 +193,39 @@ test('search duration is entirely rest when the budget prevents model evaluation
   assert.equal(jevCalls, 0)
 })
 
-test('validates search input and credentials before spending; hides upstream error bodies and redirects', async (t) => {
+test('omitting a budget still applies the demo estimate and forwards only allowed model choices', async (t) => {
+  let jevCalls = 0
+  let expectedModel = 'jev-latest'
+  const { mf, search } = await setup(async (request) => {
+    if (new URL(request.url).hostname === 'docs.typesafe.ai') {
+      return new Response('# Docs\n\n[More](/more.md)')
+    }
+    jevCalls++
+    assert.equal(request.url, 'https://openrouter.ai/api/v1/systemone')
+    assert.equal(request.headers.get('authorization'), 'Bearer synthetic-operator-key')
+    const body = await request.json() as { model: string; questions: Record<string, unknown> }
+    assert.equal(body.model, expectedModel)
+    return Response.json({
+      model: `typesafe/${expectedModel}`,
+      answers: Object.fromEntries(Object.keys(body.questions).map((id) => [id, { type: 'noul', noul: 0.1 }])),
+      usage: { input_tokens: 100, output_tokens: 0, cost: 0.03 },
+    })
+  })
+  t.after(() => mf.dispose())
+  for (const model of [undefined, 'jev-preview']) {
+    expectedModel = model ?? 'jev-latest'
+    const response = await search({ query: 'Synthetic question', ...(model ? { model } : {}) })
+    assert.equal(response.status, 200)
+    const result = await response.json() as SearchResult
+    assert.equal(result.stopped, 'budget')
+    assert.equal(result.usage.requests, 1, 'No subsequent evaluations once reported spending exceeds the default demo estimate')
+    assert.equal(result.usage.cost, 0.03)
+    assert.equal(result.model, `typesafe/${expectedModel}`)
+  }
+  assert.equal(jevCalls, 2)
+})
+
+test('validates public search input before spending; hides OpenRouter error bodies and redirects', async (t) => {
   let jevCalls = 0
   let redirect = false
   const { mf, request, search } = await setup(async (request) => {
@@ -186,8 +235,8 @@ test('validates search input and credentials before spending; hides upstream err
       : new Response('sensitive-upstream-details', { status: 401 })
   })
   t.after(() => mf.dispose())
-  assert.equal((await request('/api/search?docs=typesafe', { method: 'POST' })).status, 401)
-  for (const body of [{ query: '' }, { query: 'x', budget: -1 }, { query: 'x', budget: 2 }, { query: 'x', model: 'unsupported' }]) {
+  assert.equal((await request('/api/search?docs=typesafe', { method: 'POST' })).status, 415)
+  for (const body of [{ query: '' }, { query: 'x'.repeat(4001) }, { query: 'x', budget: 0 }, { query: 'x', budget: -1 }, { query: 'x', budget: 0.021 }, { query: 'x', budget: 2 }, { query: 'x', model: 'unsupported' }]) {
     assert.equal((await search(body)).status, 400)
   }
   assert.equal(jevCalls, 0)
@@ -198,6 +247,102 @@ test('validates search input and credentials before spending; hides upstream err
   redirect = true
   assert.equal((await search()).status, 502)
   assert.equal(jevCalls, 2) // No speculative duplicates, retries or followed redirects.
+})
+
+test('missing operator secret disables search before any fetch, but browsing still works', async (t) => {
+  let calls = 0
+  const { mf, search, request } = await setup(async () => {
+    calls++
+    return new Response('Public documentation')
+  }, 120, { apiKey: '' })
+  t.after(() => mf.dispose())
+  const response = await search()
+  assert.equal(response.status, 503)
+  assert.equal(response.headers.get('cache-control'), 'no-store')
+  assert.match((await response.json() as { error: string }).error, /not configured/)
+  assert.equal(calls, 0)
+  assert.equal((await search(undefined, 'caller-cannot-enable-demo')).status, 503)
+  assert.equal(calls, 0)
+  assert.equal((await request(docsPath)).status, 200)
+  assert.equal(calls, 1)
+})
+
+test('request signal cancellation interrupts the DO search before any subsequent paid evaluation', { timeout: 15_000 }, async (t) => {
+  const started = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  let jevCalls = 0
+  const { mf, search } = await setup(async (request) => {
+    if (request.url === 'https://cancellation.test/ready') {
+      await started.promise
+      return new Response(null)
+    }
+    if (new URL(request.url).hostname === 'docs.typesafe.ai') {
+      return new Response('# Docs\n\nSynthetic passage.', { headers: { 'cache-control': 'max-age=60' } })
+    }
+    assert.equal(request.url, 'https://openrouter.ai/api/v1/systemone')
+    jevCalls++
+    const body = await request.json() as { questions: Record<string, unknown> }
+    if (jevCalls === 1) {
+      started.resolve()
+      await release.promise
+    }
+    return Response.json({
+      model: 'typesafe/jev-test',
+      answers: Object.fromEntries(Object.keys(body.questions).map((id) => [id, { type: 'noul', noul: 0.95 }])),
+      usage: { input_tokens: 100, output_tokens: 0, cost: 0.00001 },
+    })
+  })
+  t.after(() => { release.resolve(); return mf.dispose() })
+  // Local HTTP disconnects do not reach request.signal in this Miniflare version.
+  // The test-only bundle wrapper aborts a runtime Request after the first model
+  // call starts, exercising real Worker -> DO -> Effect cancellation instead.
+  const cancelled = await search({ query: 'Synthetic cancellation check' }, '', 'typesafe', undefined, {
+    'x-test-cancel-on-model': '1',
+  })
+  assert.equal(cancelled.status, 502, 'The cancelled API request fails while its model call is pending')
+  // Allow cancellation to reach the DO before making the pending response available.
+  await delay(100)
+  release.resolve()
+  await delay(100)
+  assert.equal(jevCalls, 1, 'The disconnected search must not issue its judge evaluation')
+  // Positive control: the same object remains usable after an interrupted search.
+  const next = await search({ query: 'Synthetic next search' })
+  assert.equal(next.status, 200)
+  assert.equal((await next.json() as SearchResult).usage.requests, 2)
+  assert.equal(jevCalls, 3, 'Only the interrupted rating plus the new search rating/judge were issued')
+})
+
+test('search-only visitor limits reject before DO routing and leave browsing available', async (t) => {
+  let calls = 0
+  const { mf, search, request } = await setup(async () => {
+    calls++
+    return new Response('Public documentation')
+  }, 120, { searchLimit: 1 })
+  t.after(() => mf.dispose())
+  // An invalid body still consumes an admission, but never reaches an upstream.
+  assert.equal((await search({ query: '' })).status, 400)
+  const limited = await search(undefined, '', 'telegram', undefined, { 'x-test-forbid-routing': '1' })
+  assert.equal(limited.status, 429)
+  assert.equal(limited.headers.get('cache-control'), 'no-store')
+  assert.equal(calls, 0)
+  assert.equal((await request(docsPath)).status, 200)
+  assert.equal(calls, 1)
+})
+
+test('shared demo limiter applies across visitor IPs and documentation sources before routing', async (t) => {
+  let calls = 0
+  const { mf, search } = await setup(async () => {
+    calls++
+    return new Response('must not fetch')
+  }, 120, { demoLimit: 1 })
+  t.after(() => mf.dispose())
+  assert.equal((await search({ query: '' }, '', 'typesafe', undefined, { 'cf-connecting-ip': '192.0.2.1' })).status, 400)
+  const limited = await search(undefined, '', 'telegram', undefined, {
+    'cf-connecting-ip': '192.0.2.2', 'x-test-forbid-routing': '1',
+  })
+  assert.equal(limited.status, 429)
+  assert.match((await limited.json() as { error: string }).error, /demo is busy/)
+  assert.equal(calls, 0)
 })
 
 test('origin rules, non-cacheable CORS, unknown API routes and rate limits', async (t) => {
@@ -282,12 +427,12 @@ test('the DO independently rejects missing selection, URL overrides, and cross-h
 test('each source searches its fixed registry index with a request-local synthetic model client', async (t) => {
   const docsCalls: string[] = []
   const { mf, search } = await setup(async (request) => {
-    if (new URL(request.url).hostname !== 'api.typesafe.ai') {
+    if (new URL(request.url).hostname !== 'openrouter.ai') {
       docsCalls.push(request.url)
       return new Response('# Public docs\n\nSynthetic documentation.', { headers: { 'cache-control': 'max-age=60' } })
     }
-    assert.equal(request.url, 'https://api.typesafe.ai/v1/systemone')
-    assert.equal(request.headers.get('authorization'), 'Bearer synthetic-test-key')
+    assert.equal(request.url, 'https://openrouter.ai/api/v1/systemone')
+    assert.equal(request.headers.get('authorization'), 'Bearer synthetic-operator-key')
     const body = await request.json() as { questions: Record<string, unknown> }
     return Response.json({ model: 'jev-test', answers: Object.fromEntries(Object.keys(body.questions).map((id) => [id, { type: 'noul', noul: 0.95 }])), usage: { input_tokens: 100, output_tokens: 0 } })
   })

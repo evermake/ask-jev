@@ -6,7 +6,7 @@ export function Footer() {
     <footer className={styles.footer}>
       <p>
         Public docs are cached in Cloudflare Durable Object storage.
-        {' '}Keys, questions and responses are not persisted by this application.
+        {' '}Questions and search responses are not persisted by this application.
       </p>
       <p>
         The ${SEARCH_BUDGET.toFixed(2)} budget is an estimate, not a billing cap.

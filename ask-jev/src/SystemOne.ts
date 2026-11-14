@@ -1,6 +1,6 @@
 /**
- * Client for TypeSafe's System One API (`POST /v1/systemone`): a model that answers typed questions
- * about a state with probabilities instead of generated text.
+ * Client for System One through TypeSafe or OpenRouter: a model that answers typed questions about
+ * a state with probabilities instead of generated text.
  *
  * @see https://docs.typesafe.ai/api.md
  */
@@ -14,13 +14,15 @@ import {
 } from 'effect/http'
 
 export const DEFAULT_MODEL = 'jev-latest'
+export const TYPESAFE_ENDPOINT = 'https://api.typesafe.ai/v1/systemone'
+export const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1/systemone'
 /** No speculative duplicates; paid retries must be explicitly enabled by the integrator. */
 export interface ClientOptions {
   readonly retries?: number
 }
 const REQUEST_TIMEOUT = Duration.seconds(30)
 
-/** USD per input token (output tokens are free). */
+/** Fallback estimated USD per input token (output tokens are free). */
 export const PRICE_PER_TOKEN = 0.042 / 1_000_000
 
 /** State, instructions and criteria may be text or any JSON. */
@@ -75,10 +77,17 @@ export const Answer = Schema.Union([
 export type Answer = typeof Answer.Type
 
 export class Response extends Schema.Class<Response>('ask-jev/SystemOne/Response')({
-  /** Versioned ID of the model that answered, e.g. `jev-1.13.0`. */
+  /** Versioned ID of the model that answered, optionally provider-qualified. */
   model: Schema.String,
   answers: Schema.Record(Schema.String, Answer),
-  usage: Schema.Struct({ input_tokens: Schema.Number, output_tokens: Schema.Number }),
+  usage: Schema.Struct({
+    input_tokens: Schema.Number,
+    output_tokens: Schema.Number,
+    /** Provider-reported USD cost, when available (including zero). */
+    cost: Schema.optional(
+      Schema.Number.check(Schema.isFinite(), Schema.isGreaterThanOrEqualTo(0)),
+    ),
+  }),
 }) {
   /** Probability of yes for a Noul question. */
   noul(id: string): number {
@@ -115,7 +124,7 @@ const isOverloaded = (error: unknown) =>
  */
 export const makeWith = Effect.fnUntraced(function* (
   apiKey: Effect.Effect<Redacted.Redacted, SystemOneError>,
-  endpoint = 'https://api.typesafe.ai/v1/systemone',
+  endpoint = TYPESAFE_ENDPOINT,
   options: ClientOptions = {},
 ) {
   const client = (yield* HttpClient.HttpClient).pipe(
@@ -164,6 +173,18 @@ export const makeWith = Effect.fnUntraced(function* (
 /** Gets the API key from `apiKey` before each request; see {@link makeWith}. */
 export const layerWith = (
   apiKey: Effect.Effect<Redacted.Redacted, SystemOneError>,
-  endpoint = 'https://api.typesafe.ai/v1/systemone',
+  endpoint = TYPESAFE_ENDPOINT,
   options: ClientOptions = {},
 ) => Layer.effect(SystemOne, makeWith(apiKey, endpoint, options)).pipe(Layer.provide(FetchHttpClient.layer))
+
+/** OpenRouter client with injectable `HttpClient`; bare Jev model IDs are accepted. */
+export const makeOpenRouter = (
+  apiKey: Effect.Effect<Redacted.Redacted, SystemOneError>,
+  options: ClientOptions = {},
+) => makeWith(apiKey, OPENROUTER_ENDPOINT, options)
+
+/** OpenRouter client using Fetch; gets the key before each request, like {@link layerWith}. */
+export const layerOpenRouter = (
+  apiKey: Effect.Effect<Redacted.Redacted, SystemOneError>,
+  options: ClientOptions = {},
+) => layerWith(apiKey, OPENROUTER_ENDPOINT, options)

@@ -4,6 +4,8 @@ This document explains the repository as it exists today and how to use its core
 
 **The central boundary:** `ask-jev` owns reusable search and documentation logic; `shared` owns the deployed application's dependency-free documentation catalog; `api` supplies Cloudflare adapters and an HTTP interface; `playground` is an HTTP client and user interface. The core library does not require the catalog or either application.
 
+The reusable library supports both TypeSafe and OpenRouter and retains its backwards-compatible TypeSafe default. The application's provider adapter uses OpenRouter.
+
 > Publication status: `ask-jev/package.json` currently has `private: true`. The installation examples below assume a future npm release named `ask-jev`, with the current API and Effect peer dependency.
 
 ## 1. Repository structure
@@ -21,7 +23,7 @@ This document explains the repository as it exists today and how to use its core
 │   │   ├── Documentation.ts     # HTTP documentation/cache workflow and services
 │   │   ├── HttpCache.ts         # Pure cache metadata/freshness/revalidation logic
 │   │   ├── Search.ts            # Best-first search, scoring, results and formatting
-│   │   ├── SystemOne.ts         # Jev service, protocol types and default HTTP client
+│   │   ├── SystemOne.ts         # Jev protocol and TypeSafe/OpenRouter HTTP clients
 │   │   ├── Markdown.ts          # Parsing, blocks, links and table of contents
 │   │   └── PagePath.ts          # Branded root-relative path schema
 │   ├── test/                   # Core unit and adapter tests
@@ -120,17 +122,17 @@ The API deployment includes the playground's static assets. This is **one Cloudf
 Browser: playground
     │ Dropdown selects a shared catalog ID
     │ GET /api/page?docs=typesafe[&url=...]
-    │ POST /api/search?docs=typesafe + Bearer key + JSON body
+    │ POST /api/search?docs=typesafe + JSON body
     ▼
 Worker: api/src/index.ts
-    │ Origin/CORS checks, rate limit, catalog and initial URL validation
+    │ Origin/CORS checks, API/search rate limits, catalog/URL validation
     │ Select DO with idFromName(new URL(source.indexUrl).hostname)
     ▼
 Durable Object: api/src/object.ts
     ├── Independently validates catalog selection and selected-origin URL policy
     ├── Documentation resolver ──> public documentation host
     │           └───────────────> SQLite HTTP cache
-    └── Search ──> request-scoped SystemOne client ──> TypeSafe Jev API
+    └── Search ──> request-scoped SystemOne client ──> OpenRouter System One API
 ```
 
 ### Browse request
@@ -141,18 +143,18 @@ Durable Object: api/src/object.ts
 4. The DO extracts approved same-origin links and a table of contents.
 5. The browser receives `{ url, content, links, toc }` and renders escaped text.
 
-Browsing needs no Jev key and makes no model calls.
+Browsing fetches documentation without making model calls.
 
 ### Search request
 
 1. The Worker validates `docs` against the catalog and forwards the request to the same per-host DO. Search starts at the registered `indexUrl`; `url` must be absent or exactly equal to that index, never an arbitrary starting page.
-2. The DO independently validates that catalog/index selection, plus the Bearer key, JSON content type, question, model and estimated budget.
-3. It constructs a **request-scoped** `SystemOne` layer using that visitor's key.
+2. The DO independently validates that catalog/index selection and checks the `OPENROUTER_API_KEY` environment configuration. If absent, search returns **503 before documentation fetching or model calls**. It validates JSON content type, question, model and estimated budget.
+3. It constructs a **request-scoped** OpenRouter `SystemOne` layer.
 4. It combines that model layer with the documentation layer, creates `Docs`, and calls `docs.search`.
 5. The complete traversal, page fetching, cache access, scoring and answer judging execute inside the DO.
 6. The final `Search.Result` returns through the Worker to the browser.
 
-The DO retains its public-document cache adapter and documentation layer, **not a visitor's model client or key**. Searches are synchronous HTTP requests, not durable jobs. Browser disconnection must not be treated as a guarantee of server-side cancellation or avoided charges.
+The DO retains its public-document cache adapter and documentation layer, not a model client from a previous search. Searches are synchronous HTTP requests, not durable jobs. With `enable_request_signal`, the Worker explicitly forwards `request.signal` to the DO, whose Effect execution uses it to interrupt search when a disconnect is observed. Browser disconnection still cannot undo already-started provider work or guarantee avoided charges.
 
 Documentation IDs are selection keys only. Durable Object identities remain `idFromName(new URL(source.indexUrl).hostname)`, preserving existing per-host SQLite caches rather than creating new caches keyed by `typesafe`, `telegram` or `cloudflare`.
 
@@ -160,7 +162,11 @@ Documentation IDs are selection keys only. Durable Object identities remain `idF
 
 `api/src/contracts.ts` defines `SearchInput`, `PageResult`, `SearchResult` and `ApiError`. `SearchResult` aliases the core's `Search.Result`.
 
-The deployed API requires a catalog `docs` selector (`typesafe`, `telegram` or `cloudflare`). Browse URLs default to the selected index and must use its exact HTTPS origin with no credentials/query/fragment; redirects and Markdown alternatives must stay on that same selected origin, even if another origin also appears in the catalog. Search has a fixed registered starting index. Worker and DO enforce these constraints independently. The API also allows two model names, a 4,000-character question limit and an estimated budget greater than $0 and at most $1. These are **deployment restrictions**, not the complete capabilities or validation contract of the reusable library. An integrator must define its own admission and spending policy.
+The deployed API requires a catalog `docs` selector (`typesafe`, `telegram` or `cloudflare`). Browse URLs default to the selected index and must use its exact HTTPS origin with no credentials/query/fragment; redirects and Markdown alternatives must stay on that same selected origin, even if another origin also appears in the catalog. Search has a fixed registered starting index. Worker and DO enforce these constraints independently. The API allows `jev-latest`/`jev-preview`, a 4,000-character question limit and an estimated budget greater than $0 and at most **$0.02**, defaulting to $0.02; larger budgets are rejected. These are **deployment restrictions**, not the complete capabilities or validation contract of the reusable library. An integrator must define its own admission and spending policy.
+
+The Worker applies the existing **120 API requests/minute per IP** limit plus **5 searches/minute per IP** and **20 searches/minute shared across the application**. All are approximate and **per Cloudflare location**: the shared limiter is not a global quota and none is a hard spending cap. Configure provider-side spending limits; CORS and estimated search budgets cannot enforce them.
+
+Configure `OPENROUTER_API_KEY` through the environment. Local development reads the git-ignored `api/.dev.vars`; deployment validates required secrets through `api/wrangler.jsonc`. Keep credentials out of frontend variables and source control. See [README.md](README.md) for secure local and deployment setup.
 
 ## 4. Core modules and interfaces
 
@@ -246,10 +252,12 @@ evaluate(request: SystemOne.Request):
   Effect.Effect<SystemOne.Response, SystemOne.SystemOneError>
 ```
 
-A request contains `state`, named `questions` and an optional `model`. Question types are `noul` (yes/no probability), `choice` and `score`. The decoded response includes answers, a versioned model ID and token usage; helper methods include `response.noul(id)` and `response.probabilities(id)`.
+A request contains `state`, named `questions` and an optional `model`. Question types are `noul` (yes/no probability), `choice` and `score`. The decoded response includes answers, a versioned model ID, token usage and optional provider-reported `usage.cost`; helper methods include `response.noul(id)` and `response.probabilities(id)`. OpenRouter's `/api/v1/systemone` endpoint uses this same schema, including the bare `jev-latest`/`jev-preview` aliases rather than chat-completions model names.
 
-- `makeWith(apiKeyEffect, endpoint?, options?)` builds an implementation using an injected Effect `HttpClient`.
-- `layerWith(...)` supplies that service with the default fetch-based HTTP client.
+- `TYPESAFE_ENDPOINT` is `https://api.typesafe.ai/v1/systemone`; `OPENROUTER_ENDPOINT` is `https://openrouter.ai/api/v1/systemone`.
+- `makeWith(apiKeyEffect, endpoint?, options?)` builds an implementation using an injected Effect `HttpClient`. Its positional endpoint argument remains backwards compatible.
+- `layerWith(apiKeyEffect, endpoint?, options?)` supplies that service with the default fetch-based HTTP client and preserves the same endpoint argument.
+- `makeOpenRouter(apiKeyEffect, options?)` and `layerOpenRouter(apiKeyEffect, options?)` select `OPENROUTER_ENDPOINT` explicitly.
 - The key effect is evaluated before each evaluation, allowing dynamic credentials.
 - Defaults: `jev-latest`, the fixed TypeSafe System One endpoint, a 30-second response timeout and **zero automatic retries**. There is no speculative hedging.
 
@@ -282,7 +290,7 @@ Public options are currently `budget` (default **$0.02**) and `model`. Page/conc
 | `answered` | Model-estimated probability that the found passages answer the question |
 | `stopped` | `answered`, `exhausted`, `budget` or `max-pages` |
 | `pages`, `rounds` | Traversal history, remaining links and progress by round |
-| `usage` | Successful logical evaluation count, input tokens and calculated cost |
+| `usage` | Successful logical evaluation count, input tokens and provider-reported or estimated cost |
 | `duration` | Core search elapsed milliseconds: `totalMs`, `jevMs` and `restMs` |
 | `model` | Last reported model ID; may be empty if no evaluation ran and no model was supplied |
 
@@ -292,7 +300,7 @@ These are runtime-observed durations: Cloudflare Workers advance their clock aft
 
 `Search.format(result)` produces compact Markdown for an agent or CLI. It **does not generate an answer**. Passage offsets refer to the content supplied to search, which the `Docs` facade may normalize; do not apply them blindly to raw downloaded bytes.
 
-Budgeting uses token estimates and a configured per-token price, not a billing cap. Charges from retries, unsuccessful/aborted requests or provider pricing changes may not be represented by successful-result usage.
+Usage accounting honors a response's `usage.cost` when supplied, **including zero**, and otherwise falls back to token usage and a configured per-token price. Search rechecks actual spending and the estimated judge request before passage judging; if it cannot fit, it returns the passages already found with a budget stop. Budget admission still uses estimates and is **not a billing cap**. Charges from retries, unsuccessful/aborted requests or provider pricing changes may not be represented by successful-result usage. For OpenRouter BYOK configurations, reported cost may include only OpenRouter's fee, excluding separate provider charges.
 
 ### `Markdown.ts` and `PagePath.ts`
 
@@ -345,7 +353,7 @@ import { Docs, Documentation, DocsResolver, HttpCache, Search, SystemOne } from 
 import * as SearchModule from 'ask-jev/Search'
 ```
 
-You do **not** need the `api` or `playground` workspace packages, Wrangler, React, or a Cloudflare account. The default adapters contact the documentation host and TypeSafe directly.
+You do **not** need the `api` or `playground` workspace packages, Wrangler, React, or a Cloudflare account. The default adapters contact the documentation host and TypeSafe directly; choose `SystemOne.layerOpenRouter` to use OpenRouter instead.
 
 ### Complete example: HTTP documentation with an in-memory cache
 
@@ -408,6 +416,16 @@ node search.ts
 
 **This makes paid Jev calls.** Do not put real credentials in source control or logs. In a server application, keep `searchDocs` in a module without the example's top-level invocation, validate caller input, and pass the authenticated/request-specific key explicitly. If your application already uses Effect, expose the program as an Effect and compose it instead of calling `runPromise` inside every helper.
 
+To use OpenRouter instead, supply an OpenRouter key from your server environment and replace the example's model layer:
+
+```ts
+const model = SystemOne.layerOpenRouter(Effect.succeed(Redacted.make(apiKey)))
+// Equivalent positional-endpoint form:
+// SystemOne.layerWith(Effect.succeed(Redacted.make(apiKey)), SystemOne.OPENROUTER_ENDPOINT)
+```
+
+For that variant, read `OPENROUTER_API_KEY` instead of `TYPESAFE_API_KEY`; the request schema and bare Jev model aliases are unchanged.
+
 The example allowlist is intentional. Do not turn a user-provided URL into unrestricted server-side fetching. Approve only trusted public documentation hosts and account for DNS/network restrictions appropriate to your deployment.
 
 ### Bring an existing document source
@@ -455,11 +473,13 @@ The returned value remains an Effect; run it at your application boundary. There
 | HTTP cache decisions | `Documentation`, `HttpCache` | Supplies persistence |
 | Cache lifetime/capacity | Storage adapter's responsibility | Seven-day retention, 128 entries and 8,000,000 bytes per host; alarms/access cleanup |
 | Allowed documentation targets | Injected policy | Shared catalog; Worker and DO independently validate selection/page origin; redirects/fallbacks stay on the selected origin |
-| Jev credentials | Supplied key effect; redacted wrapper | Request-scoped visitor key; fixed endpoint and redirect rejection |
-| HTTP admission, CORS, rate limiting | Not provided | Worker and DO request validation |
+| Model provider adapter | Supplied key effect; TypeSafe default or explicit OpenRouter; redacted wrapper | Request-scoped OpenRouter client; environment configuration; fixed endpoint and redirect rejection |
+| HTTP admission, CORS, rate limiting | Not provided | Worker and DO validation; approximate per-location API/per-IP search/shared-application limits |
 | UI and HTTP contract | Not required | Playground and `api/contracts` |
 
-Only public documentation is persisted by the API. Questions, visitor keys, Jev responses and search jobs are not stored in SQLite. The browser holds the key in tab memory, not local/session storage. Provider infrastructure may have its own operational logging/retention policies.
+Only public documentation is persisted as API application data. Questions, keys, Jev responses and search jobs are not stored in SQLite, and application code does not log keys, questions or model responses. Worker observability is disabled. Hosting providers, OpenRouter and TypeSafe may have their own operational logging/retention policies.
+
+The existing `HTTP_CACHE` binding, `HttpCacheObject` class, `v1` SQLite migration and hostname-based Durable Object identities are unchanged. Deploying to the same account and Worker preserves existing public-document caches; do not reset or replace the migration.
 
 For tracing, wrap `SystemOne.evaluate`, `DocsTransport.get` or storage methods, or supply an Effect tracer. Named spans exist for documentation fetch/load/download and System One evaluation. Search also emits debug events with request counts, token counts and round progress. Avoid logging keys, document bodies or prompts. A custom adapter's errors must not embed credential-bearing requests or unredacted secrets.
 

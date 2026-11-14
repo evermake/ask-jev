@@ -9,7 +9,9 @@
     "run_worker_first": ["/api/*"]
   },
   "compatibility_date": "2026-11-06",
+  "compatibility_flags": ["enable_request_signal"],
   "workers_dev": true,
+  "secrets": { "required": ["OPENROUTER_API_KEY"] },
   "vars": {
     "ALLOWED_ORIGINS": "http://localhost:5173,http://127.0.0.1:5173",
   },
@@ -22,6 +24,16 @@
       "name": "REQUEST_LIMITER",
       "namespace_id": "538561",
       "simple": { "limit": 120, "period": 60 },
+    },
+    {
+      "name": "SEARCH_LIMITER",
+      "namespace_id": "538562",
+      "simple": { "limit": 5, "period": 60 },
+    },
+    {
+      "name": "DEMO_LIMITER",
+      "namespace_id": "538563",
+      "simple": { "limit": 20, "period": 60 },
     },
   ],
   "observability": { "enabled": false },

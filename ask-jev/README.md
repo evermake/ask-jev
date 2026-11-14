@@ -49,7 +49,7 @@ const key = Effect.try({
   },
   catch: () => new SystemOne.SystemOneError({ message: 'Set TYPESAFE_API_KEY.' }),
 })
-const model = SystemOne.layerWith(key) // Fixed TypeSafe endpoint; zero automatic retries.
+const model = SystemOne.layerWith(key) // TypeSafe endpoint; zero automatic retries.
 
 const program = Effect.gen(function* () {
   const docs = yield* Docs.make(new URL('https://docs.typesafe.ai/llms.txt'))
@@ -62,6 +62,22 @@ console.log(Search.format(result))
 ```
 
 **This example makes paid API requests** if run with a real key. Budgeting estimates input tokens and is not a hard billing cap. `SystemOne.layerWith(key, endpoint?, { retries: 0 })` has no speculative hedging and defaults to no retries. Enabling retries may incur additional charges not reflected in successful logical-request usage.
+
+## OpenRouter or TypeSafe
+
+The default provider is TypeSafe (`SystemOne.TYPESAFE_ENDPOINT`). To use an OpenRouter key, supply an Effect that returns that key as `Redacted` (as above, reading `OPENROUTER_API_KEY` instead), then choose either form:
+
+```ts
+const model = SystemOne.layerOpenRouter(openRouterKey)
+// Equivalent, retaining the positional endpoint API:
+const explicit = SystemOne.layerWith(openRouterKey, SystemOne.OPENROUTER_ENDPOINT)
+```
+
+`SystemOne.OPENROUTER_ENDPOINT` is `https://openrouter.ai/api/v1/systemone`, not the chat-completions endpoint. `makeOpenRouter(key, options?)` is the injectable-`HttpClient` equivalent of `layerOpenRouter(key, options?)`; both accept the same retry options as `makeWith` / `layerWith`. Keys are evaluated before every request. Keep server keys on your server; these adapters do not provide a browser proxy or expose keys for you.
+
+Both providers accept the same typed questions and responses. The default `jev-latest` and `jev-preview` aliases work on OpenRouter without a namespace; you can also pass a qualified ID such as `typesafe/jev-1.13-20260917` in `docs.search(query, { model })` or `SystemOne.Request.model`. The returned model ID is preserved, including its namespace.
+
+OpenRouter responses include optional `usage.cost` in USD. Search adds each response's reported cost (including zero), falling back to `input_tokens * SystemOne.PRICE_PER_TOKEN` when absent. Results and round costs use that total. Before passage judging, search rechecks spending and the estimated judge cost; if it cannot fit, search returns the passages already found with `stopped: "budget"`. Future-request budgeting still estimates token costs and is not a hard billing cap or a provider-pricing guarantee. On OpenRouter BYOK configurations, reported cost may cover only OpenRouter's fee, not separate provider charges.
 
 To add tracing, wrap `SystemOne.evaluate`, `DocsTransport.get` or `CacheStorage` in your own layer and/or supply an Effect tracer. The built-in client creates a `SystemOne.evaluate` span with a question count and disables outgoing trace headers. Never annotate/log keys or prompt bodies unless you explicitly intend to disclose them. Search's `usage.requests` counts successful logical evaluations; it is not a billing ledger.
 

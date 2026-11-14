@@ -81,7 +81,7 @@ export type Stop = 'answered' | 'exhausted' | 'budget' | 'max-pages'
 export interface Usage {
   readonly requests: number
   readonly inputTokens: number
-  /** In USD. */
+  /** In USD: provider-reported when available, otherwise estimated from input tokens. */
   readonly cost: number
 }
 
@@ -359,9 +359,10 @@ export const search = Effect.fnUntraced(function* (
 
   let requests = 0
   let inputTokens = 0
+  let spent = 0
   let charsSent = 0
   let model = options.model ?? ''
-  const cost = () => inputTokens * SystemOne.PRICE_PER_TOKEN
+  const cost = () => spent
   /** Estimated cost of requests this big, from the requests sent so far. */
   const estimate = (chars: number) =>
     chars * (charsSent > 0 ? inputTokens / charsSent : TOKENS_PER_CHAR) * SystemOne.PRICE_PER_TOKEN
@@ -375,6 +376,7 @@ export const search = Effect.fnUntraced(function* (
       Effect.flatMap(([duration, response]) => {
         requests += 1
         inputTokens += response.usage.input_tokens
+        spent += response.usage.cost ?? response.usage.input_tokens * SystemOne.PRICE_PER_TOKEN
         charsSent += JSON.stringify(request).length
         model = response.model
         return Effect.logDebug(
@@ -441,7 +443,10 @@ export const search = Effect.fnUntraced(function* (
       source: [item.passage.path, ...item.passage.headings].join(' › '),
       text: truncate(item.passage.text),
     }))
-    const response = yield* evaluate({ state, questions })
+    const request = { state, questions }
+    // Page evaluations may cost more than reserved. Recheck before another paid request.
+    if (cost() >= budget || cost() + estimate(JSON.stringify(request).length) > budget) return
+    const response = yield* evaluate(request)
     return {
       answered: response.noul('answered'),
       scores: new Map(judged.map((passage, i) => [passage, response.noul(`R${i}`)])),
@@ -533,10 +538,15 @@ export const search = Effect.fnUntraced(function* (
         if (queued === undefined || queued.relevance < link.relevance) queue.set(key, link)
       }
     }
+    let judgeOverBudget = false
     if (newPassages > 0) {
       const judgement = yield* judge(found)
-      answered = judgement.answered
-      scores = judgement.scores
+      if (judgement === undefined) {
+        judgeOverBudget = true
+      } else {
+        answered = judgement.answered
+        scores = judgement.scores
+      }
     }
     rounds.push({ pages: plans.map((plan) => plan.page.path), answered, cost: cost() })
     yield* Effect.logDebug(
@@ -545,6 +555,10 @@ export const search = Effect.fnUntraced(function* (
       `answered ${answered.toFixed(2)}`,
       `$${cost().toFixed(4)}`,
     )
+    if (judgeOverBudget) {
+      stopped = 'budget'
+      break
+    }
     if (answered >= ANSWERED) {
       stopped = 'answered'
       break

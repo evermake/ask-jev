@@ -4,7 +4,6 @@ import type { SearchQuestion } from '../../api'
 import { MODELS, SEARCH_BUDGET, type Model } from '../../config'
 import type { RequestKind } from '../../hooks/useDocumentation'
 import { LinkButton } from '../LinkButton'
-import { ApiKeyField } from './ApiKeyField'
 import { InlineSelect } from './InlineSelect'
 import { QuestionInput } from './QuestionInput'
 import styles from './SearchForm.module.css'
@@ -17,19 +16,18 @@ interface SearchFormProps {
   busy: RequestKind | null
   onSourceChange: (id: string) => void
   onBrowse: () => void
-  onSearch: (question: SearchQuestion, apiKey: string) => void
+  onSearch: (question: SearchQuestion) => void
 }
 
 export function SearchForm({ source, busy, onSourceChange, onBrowse, onSearch }: SearchFormProps) {
   const [model, setModel] = useState<Model>(MODELS[0])
   const [query, setQuery] = useState('')
-  const [apiKey, setApiKey] = useState('')
   const disabled = busy !== null
-  const canSearch = !disabled && Boolean(apiKey.trim()) && Boolean(query.trim())
+  const canSearch = !disabled && Boolean(query.trim())
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (canSearch) onSearch({ query, model }, apiKey)
+    if (canSearch) onSearch({ query, model })
   }
 
   return (
@@ -58,11 +56,11 @@ export function SearchForm({ source, busy, onSourceChange, onBrowse, onSearch }:
           <label htmlFor="query">for an answer to:</label>
         </div>
         <QuestionInput value={query} onChange={setQuery} />
-        <ApiKeyField value={apiKey} onChange={setApiKey} />
         <div className={styles.actions}>
           <p className={styles.note}>
             Original passages, not generated answers.<br />
-            <span>${SEARCH_BUDGET.toFixed(2)} search estimate · paid with your TypeSafe credits.</span>
+            <span>Demo covered via OpenRouter — no key needed.<br />
+              ${SEARCH_BUDGET.toFixed(2)} estimated search limit, not a hard cap.</span>
           </p>
           <button className={styles.searchButton} type="submit" disabled={!canSearch}>
             {busy === 'search' ? 'Searching…' : 'Find passages'}

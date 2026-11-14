@@ -40,11 +40,12 @@ test('merges matching blocks across short gaps into passages', () => {
 const fakeSystemOne = (scores: {
   readonly links: Record<string, number>
   readonly text: Record<string, number>
-}) => {
+}, costs: ReadonlyArray<number | undefined> = []) => {
   const requests: Array<SystemOne.Request> = []
   const layer = Layer.succeed(SystemOne.SystemOne, {
     evaluate: (request) => {
       requests.push(request)
+      const cost = costs[requests.length - 1]
       const state = request.state as {
         readonly blocks?: Record<string, string>
         readonly passages?: Record<string, { readonly text: string }>
@@ -64,7 +65,7 @@ const fakeSystemOne = (scores: {
         new SystemOne.Response({
           model: 'jev-test',
           answers,
-          usage: { input_tokens: 100, output_tokens: 0 },
+          usage: { input_tokens: 100, output_tokens: 0, ...(cost === undefined ? {} : { cost }) },
         }),
       )
     },
@@ -134,6 +135,99 @@ test('stops when no link is promising', async () => {
   expect(result.passages).toEqual([])
   expect(requests).toHaveLength(1)
   expect(Search.format(result)).toContain('Verdict: not found (0.00)')
+})
+
+for (const [name, costs] of [
+  ['reported', [0.001, 0.002, 0.003, 0.004]],
+  ['zero', [0, 0, 0, 0]],
+  ['mixed reported and estimated', [0.001, undefined, 0, undefined]],
+] as const) {
+  test(`search sums ${name} response costs in usage and rounds`, async () => {
+    const { requests, layer } = fakeSystemOne({ links, text: { backoff: 0.9 } }, costs)
+    const result = await Search.search(source, 'retries').pipe(
+      Effect.provide(layer),
+      Effect.runPromise,
+    )
+    const amounts = costs.map((cost) => cost ?? 100 * SystemOne.PRICE_PER_TOKEN)
+    expect(requests).toHaveLength(4)
+    expect(result.stopped).toBe('answered')
+    expect(result.usage.inputTokens).toBe(400)
+    expect(result.usage.cost).toBeCloseTo(amounts.reduce((sum, cost) => sum + cost, 0), 12)
+    for (const [round, count] of [1, 2, 4].entries()) {
+      expect(result.rounds[round]!.cost).toBeCloseTo(
+        amounts.slice(0, count).reduce((sum, cost) => sum + cost, 0),
+        12,
+      )
+    }
+  })
+}
+
+test('reported spending stops subsequent rounds at the budget', async () => {
+  const { requests, layer } = fakeSystemOne({ links, text: {} }, [0.03])
+  const result = await Search.search(source, 'retries', { budget: 0.02 }).pipe(
+    Effect.provide(layer),
+    Effect.runPromise,
+  )
+  expect(requests).toHaveLength(1)
+  expect(result.stopped).toBe('budget')
+  expect(result.usage.cost).toBe(0.03)
+  expect(result.rounds[0]!.cost).toBe(0.03)
+})
+
+const answerSource: Search.Source = {
+  ...source,
+  page: (p) => Effect.succeed({
+    url: new URL(`https://x.dev${p}`),
+    content: 'Retries use exponential backoff.',
+  }),
+}
+
+for (const [name, pageCost] of [
+  ['page cost exceeds the budget', 0.03],
+  ['no budget remains', 0.02],
+  ['the judge estimate exceeds the remaining budget', 0.02 - 1e-9],
+] as const) {
+  test(`does not pay for judging relevant passages when ${name}`, async () => {
+    const { requests, layer } = fakeSystemOne(
+      { links: {}, text: { backoff: 0.9 } },
+      [pageCost, 0.03],
+    )
+    const result = await Search.search(answerSource, 'retries', { budget: 0.02 }).pipe(
+      Effect.provide(layer),
+      Effect.runPromise,
+    )
+    expect(requests).toHaveLength(1)
+    expect(result.stopped).toBe('budget')
+    expect(result.answered).toBe(0)
+    expect(result.passages.map((passage) => passage.text)).toEqual([
+      'Retries use exponential backoff.',
+    ])
+    expect(result.passages[0]!.relevance).toBe(0.9)
+    expect(result.pages[0]!.round).toBe(1)
+    expect(result.usage).toEqual({ requests: 1, inputTokens: 100, cost: pageCost })
+    expect(result.rounds).toEqual([{ pages: [source.index], answered: 0, cost: pageCost }])
+  })
+}
+
+test('judges relevant passages when the actual judge estimate fits the remaining budget', async () => {
+  const { requests, layer } = fakeSystemOne(
+    { links: {}, text: { backoff: 0.9 } },
+    [0.01999, 0.000001],
+  )
+  const result = await Search.search(answerSource, 'retries', { budget: 0.02 }).pipe(
+    Effect.provide(layer),
+    Effect.runPromise,
+  )
+  expect(requests).toHaveLength(2)
+  expect(requests[1]!.questions).toHaveProperty('answered')
+  expect(result.stopped).toBe('answered')
+  expect(result.answered).toBe(0.9)
+  expect(result.passages.map((passage) => passage.text)).toEqual([
+    'Retries use exponential backoff.',
+  ])
+  expect(result.usage).toMatchObject({ requests: 2, inputTokens: 200 })
+  expect(result.usage.cost).toBeCloseTo(0.019991, 12)
+  expect(result.rounds[0]!.cost).toBeCloseTo(0.019991, 12)
 })
 
 test("doesn't read pages that would go over the budget", async () => {

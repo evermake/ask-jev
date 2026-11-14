@@ -4,7 +4,7 @@ import { Docs, Documentation, DocsResolver, Markdown, SystemOne } from 'ask-jev'
 import { ByteSize, Effect, Layer, Redacted, Schema } from 'effect'
 import { FetchHttpClient } from 'effect/http'
 import { cacheStorage } from './cache.ts'
-import { SearchInput, type PageResult } from './contracts.ts'
+import { MAX_SEARCH_BUDGET, SearchInput, type PageResult } from './contracts.ts'
 import { docsSource, docsTarget, docsUrl, limitedText, MAX_API_SIZE, MAX_DOC_SIZE, PublicError } from './security.ts'
 import type { Env } from './index.ts'
 
@@ -51,7 +51,7 @@ export class HttpCacheObject extends DurableObject<Env> {
         const page = await Effect.gen(function* () {
           const resolver = yield* DocsResolver.DocsResolver
           return yield* resolver.fetch(target)
-        }).pipe(Effect.provide(documentation), Effect.runPromise)
+        }).pipe(Effect.provide(documentation), (effect) => Effect.runPromise(effect, { signal: request.signal }))
         const seen = new Set<string>()
         const links = Markdown.linkEntries(page.content).flatMap((link) => {
           const destination = URL.parse(link.url, page.url)
@@ -65,21 +65,21 @@ export class HttpCacheObject extends DurableObject<Env> {
         return Response.json({ url: page.url.href, content: page.content, links, toc: Markdown.toc(page.content) } satisfies PageResult)
       }
       if (url.pathname !== '/api/search' || request.method !== 'POST') throw new PublicError('Not found.', 404)
-      const authorization = request.headers.get('authorization') ?? ''
-      if (!/^Bearer [A-Za-z0-9._~-]{1,512}$/.test(authorization)) throw new PublicError('Provide your own TypeSafe API key.', 401)
+      const apiKey = this.env.OPENROUTER_API_KEY?.trim()
+      if (!apiKey) throw new PublicError('Demo search is not configured. Please try again later.', 503)
       if (!/^application\/json\b/i.test(request.headers.get('content-type') ?? '')) throw new PublicError('Expected application/json.', 415)
       const text = await limitedText(request.body, ByteSize.toNumberUnsafe(MAX_API_SIZE))
       let input: SearchInput
       try { input = decodeSearch(JSON.parse(text)) }
       catch { throw new PublicError('Invalid search request.') }
       if (!input.query.trim() || input.query.length > 4_000 ||
-          (input.budget !== undefined && (!Number.isFinite(input.budget) || input.budget <= 0 || input.budget > 1))) {
-        throw new PublicError('Use a non-empty question (up to 4000 characters) and a budget greater than $0 and at most $1.')
+          (input.budget !== undefined && (!Number.isFinite(input.budget) || input.budget <= 0 || input.budget > MAX_SEARCH_BUDGET))) {
+        throw new PublicError(`Use a non-empty question (up to 4000 characters) and an estimated budget greater than $0 and at most $${MAX_SEARCH_BUDGET.toFixed(2)}.`)
       }
-      // Request-scoped layers: never retain a visitor's key on the object or in storage.
+      // Only the operator's secret authenticates model calls; caller credentials are ignored.
       // workerd accepts follow/manual, not redirect:error. Explicitly reject all redirects.
       const safeFetch: typeof fetch = async (input, init) => {
-        if (String(input) !== 'https://api.typesafe.ai/v1/systemone') throw new Error('Unexpected Jev endpoint')
+        if (String(input) !== SystemOne.OPENROUTER_ENDPOINT) throw new Error('Unexpected Jev endpoint')
         const upstream = await fetch(input, { ...init, redirect: 'manual' })
         if (upstream.status >= 300 && upstream.status < 400) {
           await upstream.body?.cancel()
@@ -94,24 +94,29 @@ export class HttpCacheObject extends DurableObject<Env> {
           status: upstream.status, headers: { 'content-type': 'application/json' },
         })
       }
-      const jev = SystemOne.layerWith(Effect.succeed(Redacted.make(authorization.slice(7)))).pipe(
+      const jev = SystemOne.layerWith(
+        Effect.succeed(Redacted.make(apiKey)),
+        SystemOne.OPENROUTER_ENDPOINT,
+      ).pipe(
         Layer.provide(Layer.succeed(FetchHttpClient.Fetch, safeFetch)),
       )
       const result = await Effect.gen(function* () {
         const docs = yield* Docs.make(target)
         return yield* docs.search(input.query, {
-          ...(input.budget === undefined ? {} : { budget: input.budget }),
+          budget: input.budget ?? MAX_SEARCH_BUDGET,
           ...(input.model === undefined ? {} : { model: input.model }),
         })
       }).pipe(
         Effect.provide(Layer.merge(documentation, jev)),
-        Effect.runPromise,
+        (effect) => Effect.runPromise(effect, { signal: request.signal }),
       )
       return Response.json(result)
     } catch (error) {
       // Effect.runPromise preserves typed failures; no raw causes/requests are serialized.
-      return Response.json({ error: error instanceof PublicError || error instanceof DocsResolver.DocsResolverError || error instanceof SystemOne.SystemOneError
-        ? error.message : 'Search or documentation request failed. Please try again.' }, {
+      return Response.json({ error: error instanceof PublicError || error instanceof DocsResolver.DocsResolverError
+        ? error.message : error instanceof SystemOne.SystemOneError
+          ? 'The demo model is unavailable. Please try again later.'
+          : 'Search or documentation request failed. Please try again.' }, {
         status: error instanceof PublicError ? error.status
           : error instanceof DocsResolver.DocsResolverError ? error.status ?? 502 : 502,
         headers: { 'cache-control': 'no-store' },
