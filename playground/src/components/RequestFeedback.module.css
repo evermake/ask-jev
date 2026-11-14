@@ -2,6 +2,27 @@
   font-size: 13px;
 }
 
+.spinner {
+  display: inline-block;
+  width: 1ch;
+  height: 1em;
+  overflow: hidden;
+  font-family: monospace;
+  line-height: 1;
+  vertical-align: middle;
+  text-align: center;
+}
+
+.spinnerFrames {
+  display: block;
+  animation: spinning 640ms steps(4, end) infinite;
+}
+
+.spinnerFrames span {
+  display: block;
+  height: 1em;
+}
+
 .progressTrack {
   --block-count: 32;
   --active-blocks: 4;
@@ -31,12 +52,18 @@
   );
   height: 100%;
   /* Hold every slot, including both endpoints, before reversing. */
-  animation: searching calc((var(--travel-steps) + 1) * 90ms)
+  animation: searching calc((var(--travel-steps) + 1) * 70ms)
     steps(calc(var(--travel-steps) + 1), jump-none) infinite alternate;
 }
 
 .progressBlocks span {
   background: var(--ink);
+}
+
+@keyframes spinning {
+  to {
+    transform: translateY(-4em);
+  }
 }
 
 @keyframes searching {
@@ -50,6 +77,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .spinnerFrames {
+    animation: none;
+  }
+
   .progressBlocks {
     animation: none;
     opacity: .5;

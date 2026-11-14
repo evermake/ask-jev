@@ -1,5 +1,4 @@
 import { DocumentationPage } from './components/DocumentationPage'
-import { Footer } from './components/Footer'
 import { Header } from './components/Header'
 import { RequestFeedback } from './components/RequestFeedback'
 import { SearchForm } from './components/SearchForm/SearchForm'
@@ -32,7 +31,6 @@ export function App() {
       {page && (
         <DocumentationPage page={page} disabled={disabled} onBrowse={browse} />
       )}
-      <Footer />
     </main>
   )
 }

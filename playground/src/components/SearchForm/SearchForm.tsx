@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { DOCS, type DocsEntry } from '@ask-jev/shared'
 import type { SearchQuestion } from '../../api'
-import { MODELS, SEARCH_BUDGET, type Model } from '../../config'
+import { MODELS, type Model } from '../../config'
 import type { RequestKind } from '../../hooks/useDocumentation'
 import { LinkButton } from '../LinkButton'
 import { InlineSelect } from './InlineSelect'
@@ -58,9 +58,7 @@ export function SearchForm({ source, busy, onSourceChange, onBrowse, onSearch }:
         <QuestionInput value={query} onChange={setQuery} />
         <div className={styles.actions}>
           <p className={styles.note}>
-            Original passages, not generated answers.<br />
-            <span>Demo covered via OpenRouter — no key needed.<br />
-              ${SEARCH_BUDGET.toFixed(2)} estimated search limit, not a hard cap.</span>
+            Original passages, not generated answers.
           </p>
           <button className={styles.searchButton} type="submit" disabled={!canSearch}>
             {busy === 'search' ? 'Searching…' : 'Find passages'}

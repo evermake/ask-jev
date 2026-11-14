@@ -15,7 +15,15 @@ export function RequestFeedback({ busy, error }: RequestFeedbackProps) {
       {busy && (
         <Window
           title={searching ? 'Searching documentation' : 'Opening documentation'}
-          meta={<span aria-hidden="true">···</span>}
+          meta={
+            <span className={styles.spinner} aria-hidden="true">
+              <span className={styles.spinnerFrames}>
+                {['/', '-', '\\', '|', '/'].map((frame, index) => (
+                  <span key={index}>{frame}</span>
+                ))}
+              </span>
+            </span>
+          }
           role="status"
           variant="loading"
         >

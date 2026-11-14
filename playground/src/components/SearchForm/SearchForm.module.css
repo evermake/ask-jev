@@ -29,11 +29,6 @@
   margin: 0;
 }
 
-.note span {
-  color: var(--muted);
-  font-size: 11px;
-}
-
 .searchButton {
   flex-shrink: 0;
   background: var(--accent);
