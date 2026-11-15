@@ -40,11 +40,13 @@ async function setup(
   limit = 120,
   options: { apiKey?: string; searchLimit?: number; demoLimit?: number } = {},
 ) {
+  const logs: Array<{ level: string; message: string }> = []
   const mf = new Miniflare({ ...convertV4MiniflareOptions({
     name: 'api', modules: true, script, compatibilityDate: '2026-11-06',
     compatibilityFlags: ['enable_request_signal'],
     durableObjects: { HTTP_CACHE: { className: 'HttpCacheObject', useSQLite: true } },
     bindings: { ALLOWED_ORIGINS: origin, OPENROUTER_API_KEY: options.apiKey ?? 'synthetic-operator-key' },
+    handleStructuredLogs: (entry) => { logs.push(entry) },
     ratelimits: {
       REQUEST_LIMITER: { namespace_id: '538561', simple: { limit, period: 60 } },
       SEARCH_LIMITER: { namespace_id: '538562', simple: { limit: options.searchLimit ?? 1000, period: 60 } },
@@ -62,10 +64,69 @@ async function setup(
     body: JSON.stringify(body),
   })
   const storage = (name = 'docs.typesafe.ai') => mf.unsafeGetDurableObjectStorage('api', 'HttpCacheObject', { name })
-  return { mf, request, search, storage }
+  return { mf, request, search, storage, logs }
 }
 
 const docsPath = '/api/page?docs=typesafe'
+
+test('logs model errors with stack traces and upstream status, without private data', async (t) => {
+  const { mf, search, logs } = await setup(async (request) => new URL(request.url).hostname === 'docs.typesafe.ai'
+    ? new Response('# Public documentation')
+    : new Response('synthetic-sensitive-upstream-body', { status: 402 }))
+  t.after(() => mf.dispose())
+  const response = await search({ query: 'synthetic-sensitive-question' }, 'synthetic-sensitive-caller-key', 'typesafe', undefined, {
+    cookie: 'synthetic-sensitive-cookie',
+  })
+  assert.equal(response.status, 502)
+  assert.equal(response.headers.get('x-request-id'), null)
+  assert.equal(logs.length, 1)
+  assert.equal(logs[0]!.level, 'error')
+  assert.match(logs[0]!.message, /System One returned HTTP 402/)
+  assert.match(logs[0]!.message, /\bat .*:\d+:\d+/)
+  const serialized = JSON.stringify(logs)
+  for (const secret of ['synthetic-sensitive', 'synthetic-operator-key', 'authorization', 'cookie']) {
+    assert.ok(!serialized.includes(secret), `Logs must not contain ${secret}`)
+  }
+  assert.deepEqual(Object.keys(await response.json() as object), ['error'], 'Public error bodies stay generic')
+})
+
+test('logs malformed model response failures without logging the response body', async (t) => {
+  let invalidJson = true
+  const { mf, search, logs } = await setup(async (request) => new URL(request.url).hostname === 'docs.typesafe.ai'
+    ? new Response('# Docs')
+    : invalidJson ? new Response('synthetic-private-invalid-json')
+      : Response.json({ private: 'synthetic-private-invalid-schema' }))
+  t.after(() => mf.dispose())
+  for (const value of [true, false]) {
+    invalidJson = value
+    const response = await search()
+    assert.equal(response.status, 502)
+    assert.match(logs.at(-1)!.message, /\bat .*:\d+:\d+/)
+  }
+  assert.equal(logs.length, 2)
+  assert.ok(!JSON.stringify(logs).includes('synthetic-private'))
+})
+
+test('does not log successful searches or expected validation errors', async (t) => {
+  const { mf, request, search, logs } = await setup(async (request) => {
+    if (new URL(request.url).hostname === 'docs.typesafe.ai') return new Response('# Docs\n\nPublic passage.')
+    const body = await request.json() as { questions: Record<string, unknown> }
+    return Response.json({
+      model: 'synthetic-sensitive-model-response',
+      answers: Object.fromEntries(Object.keys(body.questions).map((id) => [id, { type: 'noul', noul: 0.95 }])),
+      usage: { input_tokens: 100, output_tokens: 0, cost: 0.00001 },
+    })
+  })
+  t.after(() => mf.dispose())
+  const response = await search({ query: 'synthetic-sensitive-question', model: 'jev-preview' })
+  assert.equal(response.status, 200)
+  const invalid = await request('/api/synthetic-sensitive-path?docs=synthetic-sensitive-selection')
+  assert.equal(invalid.status, 404)
+  const forbidden = await request(docsPath, { headers: { origin: 'https://synthetic-sensitive-origin.example' } })
+  assert.equal(forbidden.status, 403)
+  assert.equal(forbidden.headers.get('access-control-allow-origin'), null)
+  assert.deepEqual(logs, [])
+})
 
 function assertSearchDuration(result: SearchResult) {
   const { duration } = result
@@ -271,7 +332,7 @@ test('request signal cancellation interrupts the DO search before any subsequent
   const started = Promise.withResolvers<void>()
   const release = Promise.withResolvers<void>()
   let jevCalls = 0
-  const { mf, search } = await setup(async (request) => {
+  const { mf, search, logs } = await setup(async (request) => {
     if (request.url === 'https://cancellation.test/ready') {
       await started.promise
       return new Response(null)
@@ -305,6 +366,7 @@ test('request signal cancellation interrupts the DO search before any subsequent
   release.resolve()
   await delay(100)
   assert.equal(jevCalls, 1, 'The disconnected search must not issue its judge evaluation')
+  assert.deepEqual(logs, [], 'Cancellation is not logged as a server error')
   // Positive control: the same object remains usable after an interrupted search.
   const next = await search({ query: 'Synthetic next search' })
   assert.equal(next.status, 200)

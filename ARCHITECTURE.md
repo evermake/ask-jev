@@ -477,7 +477,9 @@ The returned value remains an Effect; run it at your application boundary. There
 | HTTP admission, CORS, rate limiting | Not provided | Worker and DO validation; approximate per-location API/per-IP search/shared-application limits |
 | UI and HTTP contract | Not required | Playground and `api/contracts` |
 
-Only public documentation is persisted as API application data. Questions, keys, Jev responses and search jobs are not stored in SQLite, and application code does not log keys, questions or model responses. Worker observability is disabled. Hosting providers, OpenRouter and TypeSafe may have their own operational logging/retention policies.
+Only public documentation is persisted as API application data in SQLite. Questions, keys, Jev responses and search jobs are not stored in SQLite, and application code does not log keys, questions or model responses. Hosting providers, OpenRouter and TypeSafe may have their own operational logging/retention policies.
+
+Workers Logs is enabled and source maps are uploaded. Worker/DO server failures are logged as native `Error` objects for Cloudflare's stack capture and Issues support, while public error responses remain generic. `api/src/logging.ts` keeps known safe messages (including model HTTP status) and original stack frames, but strips arbitrary messages, attached fields and raw causes. Successful requests, expected client errors and cancellation are not logged. Automatic invocation logs and library console output are disabled; there is no custom request-ID or event-tracking system.
 
 The existing `HTTP_CACHE` binding, `HttpCacheObject` class, `v1` SQLite migration and hostname-based Durable Object identities are unchanged. Deploying to the same account and Worker preserves existing public-document caches; do not reset or replace the migration.
 

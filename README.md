@@ -145,9 +145,19 @@ The Worker name, `HTTP_CACHE` binding, `HttpCacheObject` class, `v1` SQLite migr
 
 Alternatively, use Cloudflare's Git integration with the repository root as the build root, `pnpm build` as the build command and `pnpm --filter api run deploy` as the deploy command.
 
+## Operational logs
+
+Server failures are logged with `console.error(Error, stack)`; source maps are uploaded for Cloudflare's source-level diagnostics. Look in **Workers & Pages → ask-jev-api → Observability → Logs / Issues**, or stream logs:
+
+```sh
+pnpm --filter @ask-jev/api exec wrangler tail --format json
+```
+
+Only sanitized error messages and stack frames are logged, not questions, credentials, response bodies or raw causes. Explicit stack text contains runtime/bundle locations; Cloudflare's captured exception diagnostics use the uploaded source maps. Model HTTP errors retain the upstream status in their message. Successful requests, expected validation failures and cancellation are not logged by application code; automatic invocation logs and library console output are disabled. An application-returned 502 may still count as a handled invocation, so filter by log severity rather than invocation outcome. Logs are not retroactive; Cloudflare controls retention, platform metadata and logging limits.
+
 ## Privacy and security
 
-- Questions, selected documentation and Jev responses are transient. **Only public documentation is persisted as application data.** Hosting providers, OpenRouter and TypeSafe may retain operational/request data according to their policies; application code does not log keys, questions or model responses. Worker observability is disabled.
+- Questions and Jev responses are transient. **Only public documentation is persisted as application data in SQLite.** Application error logs contain sanitized messages and stack frames, not keys, questions or model responses. Hosting providers, OpenRouter and TypeSafe may retain operational/request data according to their policies.
 - The HTTP cache respects freshness, ETag/Last-Modified, revalidation and safe stale-on-error. Private, `no-store`, cookie-setting and credential-varying responses are not stored. Cache entries are bounded to **128 entries / 8 MB per host**, with seven-day retention and alarm/access cleanup.
 - The Worker and Durable Object independently validate the catalog selection and page URL. Documentation URLs require HTTPS, no credentials, query or fragment, and the selected source's exact origin. Every redirect/Markdown fallback must stay on that selected origin; another catalog entry's origin is not interchangeable. Caller cookies/headers are never forwarded to docs. Jev credentials go only to the fixed endpoint, with redirects rejected and upstream error bodies suppressed.
 - Origin checks, per-IP and deployment-wide rate limits, and streamed body limits reduce abuse. **CORS is not authentication**: non-browser clients can omit/spoof Origin. Limits are approximate/per Cloudflare location, not an account-wide spending or resource cap; estimated search budgets are not hard billing limits either.

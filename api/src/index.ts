@@ -1,5 +1,6 @@
 import { Duration } from 'effect'
 import { docsSource, docsTarget, PublicError } from './security.ts'
+import { logError } from './logging.ts'
 import type { HttpCacheObject } from './object.ts'
 export { HttpCacheObject } from './object.ts'
 
@@ -53,6 +54,7 @@ export default {
       const stub = env.HTTP_CACHE.get(env.HTTP_CACHE.idFromName(new URL(source.indexUrl).hostname))
       response = await stub.fetch(request, { signal: request.signal })
     } catch (error) {
+      if (!request.signal.aborted && (!(error instanceof PublicError) || error.status >= 500)) logError(error)
       response = Response.json({ error: error instanceof PublicError ? error.message : 'API unavailable. Please try again.' }, {
         status: error instanceof PublicError ? error.status : 502,
       })

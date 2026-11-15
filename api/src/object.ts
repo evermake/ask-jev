@@ -1,12 +1,13 @@
 import { DurableObject } from 'cloudflare:workers'
 import type { DocsEntry } from '@ask-jev/shared'
 import { Docs, Documentation, DocsResolver, Markdown, SystemOne } from 'ask-jev'
-import { ByteSize, Effect, Layer, Redacted, Schema } from 'effect'
+import { ByteSize, Effect, Layer, Logger, Redacted, Schema } from 'effect'
 import { FetchHttpClient } from 'effect/http'
 import { cacheStorage } from './cache.ts'
 import { MAX_SEARCH_BUDGET, SearchInput, type PageResult } from './contracts.ts'
 import { docsSource, docsTarget, docsUrl, limitedText, MAX_API_SIZE, MAX_DOC_SIZE, PublicError } from './security.ts'
 import type { Env } from './index.ts'
+import { logError } from './logging.ts'
 
 const decodeSearch = Schema.decodeUnknownSync(SearchInput)
 
@@ -51,7 +52,11 @@ export class HttpCacheObject extends DurableObject<Env> {
         const page = await Effect.gen(function* () {
           const resolver = yield* DocsResolver.DocsResolver
           return yield* resolver.fetch(target)
-        }).pipe(Effect.provide(documentation), (effect) => Effect.runPromise(effect, { signal: request.signal }))
+        }).pipe(
+          Effect.provide(documentation),
+          Effect.provide(Logger.layer([])),
+          (effect) => Effect.runPromise(effect, { signal: request.signal }),
+        )
         const seen = new Set<string>()
         const links = Markdown.linkEntries(page.content).flatMap((link) => {
           const destination = URL.parse(link.url, page.url)
@@ -108,17 +113,20 @@ export class HttpCacheObject extends DurableObject<Env> {
         })
       }).pipe(
         Effect.provide(Layer.merge(documentation, jev)),
+        Effect.provide(Logger.layer([])),
         (effect) => Effect.runPromise(effect, { signal: request.signal }),
       )
       return Response.json(result)
     } catch (error) {
+      const status = error instanceof PublicError ? error.status
+        : error instanceof DocsResolver.DocsResolverError ? error.status ?? 502 : 502
+      if (status >= 500 && !request.signal.aborted) logError(error)
       // Effect.runPromise preserves typed failures; no raw causes/requests are serialized.
       return Response.json({ error: error instanceof PublicError || error instanceof DocsResolver.DocsResolverError
         ? error.message : error instanceof SystemOne.SystemOneError
           ? 'The demo model is unavailable. Please try again later.'
           : 'Search or documentation request failed. Please try again.' }, {
-        status: error instanceof PublicError ? error.status
-          : error instanceof DocsResolver.DocsResolverError ? error.status ?? 502 : 502,
+        status,
         headers: { 'cache-control': 'no-store' },
       })
     }

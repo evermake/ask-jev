@@ -2,6 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ask-jev-api",
   "main": "src/index.ts",
+  "upload_source_maps": true,
   "assets": {
     "directory": "../playground/dist",
     "binding": "ASSETS",
@@ -40,5 +41,10 @@
       "simple": { "limit": 20, "period": 60 },
     },
   ],
-  "observability": { "enabled": false },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "invocation_logs": false
+    }
+  },
 }
