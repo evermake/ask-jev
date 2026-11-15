@@ -91,19 +91,6 @@ small {
   margin-top: 10px;
 }
 
-pre {
-  font: 13px/1.8 'Courier New', Courier, monospace;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  background: #fffefb;
-  border: 1px solid #c6c8bc;
-  padding: 18px;
-  max-height: 600px;
-  overflow: auto;
-  margin: 14px 0 0;
-  tab-size: 2;
-}
-
 details {
   margin-top: 20px;
   font-size: 12px;
