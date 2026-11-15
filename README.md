@@ -31,15 +31,9 @@ Durable Object (one per approved documentation hostname)
 
 ### Documentation catalog
 
-The playground dropdown and server policy use `DOCS` from `@ask-jev/shared`:
+The playground dropdown and server policy use the same shared documentation catalog.
 
-| ID | Label | Fixed search index |
-| --- | --- | --- |
-| `typesafe` | TypeSafe | `https://docs.typesafe.ai/llms.txt` |
-| `telegram` | Telegram | `https://core.telegram.org/llms.txt` |
-| `cloudflare` | Cloudflare | `https://developers.cloudflare.com/llms.txt` |
-
-To add documentation, add one `{ id, label, indexUrl }` entry in **`shared/src/index.ts`**, update the expected-entry test, and rebuild/deploy. The package exports the readonly `DOCS` catalog and derived `DocsEntry`/`DocsId` types, with no framework or Effect dependencies. There is no `DOCS_HOSTS` setting or arbitrary-host input.
+The shared package exports the readonly `DOCS` catalog and derived `DocsEntry`/`DocsId` types, with no framework or Effect dependencies. There is no `DOCS_HOSTS` setting or arbitrary-host input.
 
 ### Where the implementation lives
 
@@ -81,7 +75,7 @@ Node executes `.ts` test files without Bun, ts-node or tsx. The library also bui
 
 ## HTTP API
 
-Both endpoints require `?docs=typesafe|telegram|cloudflare` to select a registered documentation source. Questions are only sent in POST bodies. Responses use `Cache-Control: no-store`.
+Both endpoints require `?docs=<id>`, where `<id>` is a registered documentation source ID. Questions are only sent in POST bodies. Responses use `Cache-Control: no-store`.
 
 ### Browse
 
@@ -119,7 +113,7 @@ A search is one synchronous HTTP request, not a persisted job. The `enable_reque
 The React SPA and API deploy together as **one Cloudflare Worker with static assets**, on the same origin. GitHub Pages and `PUBLIC_WORKER_URL` are no longer used.
 
 1. Review `api/wrangler.jsonc`:
-   - Documentation sources come from `shared/src/index.ts`, not environment host configuration.
+   - Documentation sources come from the shared catalog, not environment host configuration.
    - `ALLOWED_ORIGINS`: optional additional exact origins; the deployment's own origin is always accepted. The initial extra origin is the Vite development server.
    - Worker `name`, custom domains/routes and rate limits as needed.
 2. Authenticate, configure the deployment secret, and deploy:

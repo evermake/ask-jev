@@ -104,15 +104,9 @@ Root `dev`, `typecheck` and `test` also build shared before the core; developmen
 
 ### Shared documentation catalog
 
-`shared/src/index.ts` is the single application source of truth:
+The shared documentation catalog is the single application source of truth for available documentation.
 
-| ID | Label | Index URL |
-| --- | --- | --- |
-| `typesafe` | TypeSafe | `https://docs.typesafe.ai/llms.txt` |
-| `telegram` | Telegram | `https://core.telegram.org/llms.txt` |
-| `cloudflare` | Cloudflare | `https://developers.cloudflare.com/llms.txt` |
-
-The package root exports readonly `DOCS`, `type DocsEntry = (typeof DOCS)[number]` and `type DocsId = DocsEntry['id']`. It has no frontend, framework or Effect dependency. To add a source, add one `{ id, label, indexUrl }` entry here, update the expected-entry test and rebuild/deploy. The UI derives its dropdown from this list; the server derives its allowed source and origin from the same entry. `DOCS_HOSTS` has been removed; environment configuration does not add arbitrary hosts.
+The package root exports readonly `DOCS`, `type DocsEntry = (typeof DOCS)[number]` and `type DocsId = DocsEntry['id']`. It has no frontend, framework or Effect dependency. The UI derives its dropdown from this list; the server derives its allowed source and origin from the same entry. `DOCS_HOSTS` has been removed; environment configuration does not add arbitrary hosts.
 
 The API deployment includes the playground's static assets. This is **one Cloudflare Worker deployment with a Durable Object and static assets**, not a separate Pages deployment. `/api/*` reaches Worker code first; other routes serve static assets with SPA fallback.
 
@@ -156,13 +150,13 @@ Browsing fetches documentation without making model calls.
 
 The DO retains its public-document cache adapter and documentation layer, not a model client from a previous search. Searches are synchronous HTTP requests, not durable jobs. With `enable_request_signal`, the Worker explicitly forwards `request.signal` to the DO, whose Effect execution uses it to interrupt search when a disconnect is observed. Browser disconnection still cannot undo already-started provider work or guarantee avoided charges.
 
-Documentation IDs are selection keys only. Durable Object identities remain `idFromName(new URL(source.indexUrl).hostname)`, preserving existing per-host SQLite caches rather than creating new caches keyed by `typesafe`, `telegram` or `cloudflare`.
+Documentation IDs are selection keys only. Durable Object identities remain `idFromName(new URL(source.indexUrl).hostname)`, preserving existing per-host SQLite caches rather than creating new caches keyed by documentation IDs.
 
 ### API contracts versus core API
 
 `api/src/contracts.ts` defines `SearchInput`, `PageResult`, `SearchResult` and `ApiError`. `SearchResult` aliases the core's `Search.Result`.
 
-The deployed API requires a catalog `docs` selector (`typesafe`, `telegram` or `cloudflare`). Browse URLs default to the selected index and must use its exact HTTPS origin with no credentials/query/fragment; redirects and Markdown alternatives must stay on that same selected origin, even if another origin also appears in the catalog. Search has a fixed registered starting index. Worker and DO enforce these constraints independently. The API allows `jev-latest`/`jev-preview`, a 4,000-character question limit and an estimated budget greater than $0 and at most **$0.02**, defaulting to $0.02; larger budgets are rejected. These are **deployment restrictions**, not the complete capabilities or validation contract of the reusable library. An integrator must define its own admission and spending policy.
+The deployed API requires a `docs` selector matching a registered documentation source ID. Browse URLs default to the selected index and must use its exact HTTPS origin with no credentials/query/fragment; redirects and Markdown alternatives must stay on that same selected origin, even if another origin also appears in the catalog. Search has a fixed registered starting index. Worker and DO enforce these constraints independently. The API allows `jev-latest`/`jev-preview`, a 4,000-character question limit and an estimated budget greater than $0 and at most **$0.02**, defaulting to $0.02; larger budgets are rejected. These are **deployment restrictions**, not the complete capabilities or validation contract of the reusable library. An integrator must define its own admission and spending policy.
 
 The Worker applies the existing **120 API requests/minute per IP** limit plus **5 searches/minute per IP** and **20 searches/minute shared across the application**. All are approximate and **per Cloudflare location**: the shared limiter is not a global quota and none is a hard spending cap. Configure provider-side spending limits; CORS and estimated search budgets cannot enforce them.
 
