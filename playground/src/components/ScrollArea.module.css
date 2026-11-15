@@ -1,0 +1,45 @@
+.area {
+  max-height: 600px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  border: 1px solid #c6c8bc;
+  margin: 14px 0 0;
+  padding: 18px;
+  /* Local covers hide each scroll shadow when that end of the area is reached. */
+  background:
+    linear-gradient(#fffefb 30%, #fffefb00) center top,
+    linear-gradient(#fffefb00, #fffefb 70%) center bottom,
+    radial-gradient(farthest-side at 50% 0, #292c2733, transparent) center top,
+    radial-gradient(farthest-side at 50% 100%, #292c2733, transparent) center bottom;
+  background-color: #fffefb;
+  background-repeat: no-repeat;
+  background-size: 100% 32px, 100% 32px, 100% 10px, 100% 10px;
+  background-attachment: local, local, scroll, scroll;
+}
+
+pre.area {
+  font: 13px/1.8 'Courier New', Courier, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+}
+
+.area::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.area::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+
+.area::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border: 2px solid var(--surface);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .area {
+    scrollbar-color: var(--muted) var(--surface);
+  }
+}

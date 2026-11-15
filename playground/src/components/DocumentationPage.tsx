@@ -1,5 +1,6 @@
 import type { PageResult } from '@ask-jev/api/contracts'
 import { LinkButton } from './LinkButton'
+import { ScrollArea } from './ScrollArea'
 import { Window } from './Window'
 import styles from './DocumentationPage.module.css'
 
@@ -11,26 +12,28 @@ interface DocumentationPageProps {
 
 export function DocumentationPage({ page, disabled, onBrowse }: DocumentationPageProps) {
   return (
-    <Window title={new URL(page.url).pathname} meta="Document" label="Documentation page">
-      <p className={styles.url}>{page.url}</p>
+    <Window title={page.url.replace(/^https?:\/\//, '')} meta="Document" label="Documentation page">
+      <ScrollArea className={styles.content} label="Page content">
+        {page.content}
+      </ScrollArea>
       {page.links.length > 0 && (
-        <details open>
+        <details key={page.url}>
           <summary>Linked pages ({page.links.length})</summary>
-          <ul className={styles.links}>
+          <ScrollArea as="ul" className={styles.links} label="Linked pages">
             {page.links.map((link) => (
               <li key={link.url}>
-                <LinkButton disabled={disabled} onClick={() => onBrowse(link.url)}>
+                <LinkButton
+                  className={styles.link}
+                  disabled={disabled}
+                  onClick={() => onBrowse(link.url)}
+                >
                   {link.text}
                 </LinkButton>
               </li>
             ))}
-          </ul>
+          </ScrollArea>
         </details>
       )}
-      <details open>
-        <summary>Page content</summary>
-        <pre>{page.content}</pre>
-      </details>
     </Window>
   )
 }

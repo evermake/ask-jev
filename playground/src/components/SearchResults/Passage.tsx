@@ -1,5 +1,6 @@
 import type { SearchResult } from '@ask-jev/api/contracts'
 import { LinkButton } from '../LinkButton'
+import { ScrollArea } from '../ScrollArea'
 import styles from './Passage.module.css'
 
 interface PassageProps {
@@ -29,7 +30,7 @@ export function Passage({ passage, number, disabled, onOpenPage }: PassageProps)
           {Math.round(passage.relevance * 100)}% relevance
         </span>
       </div>
-      <pre>{passage.text}</pre>
+      <ScrollArea label={`Passage ${number}`}>{passage.text}</ScrollArea>
     </article>
   )
 }
