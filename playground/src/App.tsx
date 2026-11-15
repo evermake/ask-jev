@@ -9,6 +9,7 @@ import styles from './App.module.css'
 export function App() {
   const { source, page, result, busy, error, changeSource, browse, search } = useDocumentation()
   const disabled = busy !== null
+  const hasActivity = Boolean(busy || error || result || page)
 
   function openResultPage(path: string) {
     browse(`${new URL(source.indexUrl).origin}${path}`)
@@ -16,21 +17,23 @@ export function App() {
 
   return (
     <main className={styles.layout}>
-      <Header />
-      <SearchForm
-        source={source}
-        busy={busy}
-        onSourceChange={changeSource}
-        onBrowse={() => browse()}
-        onSearch={search}
-      />
-      <RequestFeedback busy={busy} error={error} />
-      {result && (
-        <SearchResults result={result} disabled={disabled} onOpenPage={openResultPage} />
-      )}
-      {page && (
-        <DocumentationPage page={page} disabled={disabled} onBrowse={browse} />
-      )}
+      <div className={`${styles.workspace} ${hasActivity ? styles.active : ''}`}>
+        <Header />
+        <SearchForm
+          source={source}
+          busy={busy}
+          onSourceChange={changeSource}
+          onBrowse={() => browse()}
+          onSearch={search}
+        />
+        <RequestFeedback busy={busy} error={error} />
+        {result && (
+          <SearchResults result={result} disabled={disabled} onOpenPage={openResultPage} />
+        )}
+        {page && (
+          <DocumentationPage page={page} disabled={disabled} onBrowse={browse} />
+        )}
+      </div>
     </main>
   )
 }

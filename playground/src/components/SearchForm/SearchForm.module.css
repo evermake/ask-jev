@@ -2,31 +2,35 @@
   background: var(--paper);
   border: 1px solid var(--ink);
   box-shadow: 5px 5px 0 #a7aa9a;
-  padding: 32px 32px 0;
+  padding: 24px 24px 0;
 }
 
 .prompt {
-  font-size: clamp(19px, 2.6vw, 24px);
-  line-height: 2;
-  letter-spacing: -.06em;
-}
-
-.prompt label {
-  display: block;
-  margin: 8px 0 14px;
-}
-
-.actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin: 30px 0 26px;
+  gap: 8px 12px;
+  margin-bottom: 16px;
+  font-size: clamp(18px, 2.6vw, 22px);
+  line-height: 1.6;
+  letter-spacing: -.04em;
 }
 
-.note {
-  font-size: 12px;
-  margin: 0;
+.clause {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.queryLabel {
+  margin-left: .5em;
+}
+
+.questionRow {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  margin-bottom: 24px;
 }
 
 .searchButton {
@@ -38,7 +42,7 @@
 }
 
 .searchButton span {
-  margin-left: 14px;
+  margin-left: 6px;
 }
 
 .searchButton:disabled {
@@ -51,7 +55,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin: 0 -32px;
+  margin: 0 -24px;
   padding: 8px 16px;
   border-top: 1px solid #b8bbae;
   background: #eeeee5;
@@ -70,39 +74,33 @@
   min-height: 28px;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 600px) {
   .composer {
-    padding: 24px 24px 0;
-  }
-
-  .sourceStrip {
-    margin: 0 -24px;
-  }
-}
-
-@media (max-width: 440px) {
-  .composer {
-    padding: 20px 18px 0;
+    padding: 16px 16px 0;
     box-shadow: 3px 3px 0 #a7aa9a;
   }
 
   .prompt {
-    font-size: 19px;
+    flex-wrap: nowrap;
+    gap: 6px;
+    margin-bottom: 12px;
+    font-size: clamp(10px, 3.1vw, 14px);
   }
 
-  .actions {
+  .questionRow {
     flex-direction: column;
-    align-items: stretch;
-    gap: 16px;
-    margin-top: 24px;
+    gap: 8px;
+    margin-bottom: 16px;
   }
 
   .searchButton {
-    align-self: flex-end;
+    width: 100%;
+    height: 44px;
+    padding: 8px 12px;
   }
 
   .sourceStrip {
-    margin: 0 -18px;
+    margin: 0 -16px;
     padding: 8px 12px;
     gap: 12px;
   }

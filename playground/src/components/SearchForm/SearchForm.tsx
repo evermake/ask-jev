@@ -34,34 +34,34 @@ export function SearchForm({ source, busy, onSourceChange, onBrowse, onSearch }:
     <section className={styles.composer} aria-label="Ask Jev">
       <form onSubmit={submit}>
         <div className={styles.prompt}>
-          <InlineSelect
-            id="model"
-            label="Model"
-            disabled={disabled}
-            value={model}
-            options={MODEL_OPTIONS}
-            onChange={setModel}
-          />
-          <span>, please search </span>
-          <InlineSelect
-            id="docs"
-            label="Documentation source"
-            describedBy="docs-index"
-            disabled={disabled}
-            value={source.id}
-            options={DOCS_OPTIONS}
-            onChange={onSourceChange}
-          />
-          <span> docs</span>
-          <label htmlFor="query">for an answer to:</label>
+          <span className={styles.clause}>
+            <InlineSelect
+              id="model"
+              label="Model"
+              disabled={disabled}
+              value={model}
+              options={MODEL_OPTIONS}
+              onChange={setModel}
+            />
+            <span>, search</span>
+          </span>
+          <span className={styles.clause}>
+            <InlineSelect
+              id="docs"
+              label="Documentation source"
+              describedBy="docs-index"
+              disabled={disabled}
+              value={source.id}
+              options={DOCS_OPTIONS}
+              onChange={onSourceChange}
+            />
+            <label className={styles.queryLabel} htmlFor="query">docs for:</label>
+          </span>
         </div>
-        <QuestionInput value={query} onChange={setQuery} />
-        <div className={styles.actions}>
-          <p className={styles.note}>
-            Original passages, not generated answers.
-          </p>
+        <div className={styles.questionRow}>
+          <QuestionInput value={query} onChange={setQuery} />
           <button className={styles.searchButton} type="submit" disabled={!canSearch}>
-            {busy === 'search' ? 'Searching…' : 'Find passages'}
+            {busy === 'search' ? 'Searching…' : 'Ask'}
             <span aria-hidden="true"> ↵</span>
           </button>
         </div>

@@ -23,6 +23,16 @@
   flex: none;
 }
 
+.pages {
+  max-height: 320px;
+  padding-left: 36px;
+}
+
+.pageLink {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .pageStatus {
   color: var(--muted);
   font-size: 12px;

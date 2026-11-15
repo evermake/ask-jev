@@ -33,3 +33,15 @@
 .select:hover:not(:disabled) {
   background-color: var(--accent);
 }
+
+@media (max-width: 600px) {
+  .container {
+    font-size: inherit;
+    line-height: 1.4;
+  }
+
+  .sizingText,
+  .select {
+    padding: 3px 6px;
+  }
+}

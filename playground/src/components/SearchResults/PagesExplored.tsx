@@ -1,5 +1,6 @@
 import type { SearchResult } from '@ask-jev/api/contracts'
 import { LinkButton } from '../LinkButton'
+import { ScrollArea } from '../ScrollArea'
 import styles from './SearchResults.module.css'
 
 interface PagesExploredProps {
@@ -12,10 +13,10 @@ export function PagesExplored({ pages, disabled, onOpenPage }: PagesExploredProp
   return (
     <details>
       <summary>Pages explored ({pages.length})</summary>
-      <ul>
+      <ScrollArea as="ul" className={styles.pages} label="Pages explored">
         {pages.map((page) => (
           <li key={page.path}>
-            <LinkButton disabled={disabled} onClick={() => onOpenPage(page.path)}>
+            <LinkButton className={styles.pageLink} disabled={disabled} onClick={() => onOpenPage(page.path)}>
               {page.path}
             </LinkButton>
             <span className={styles.pageStatus}>
@@ -23,7 +24,7 @@ export function PagesExplored({ pages, disabled, onOpenPage }: PagesExploredProp
             </span>
           </li>
         ))}
-      </ul>
+      </ScrollArea>
     </details>
   )
 }

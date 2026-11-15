@@ -1,12 +1,29 @@
 .layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
   max-width: 940px;
   margin: auto;
-  padding: 88px 28px 40px;
+  padding: 28px 28px 40px;
+}
+
+.workspace {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding-bottom: 30px;
+}
+
+.active {
+  justify-content: flex-start;
+  padding-bottom: 0;
 }
 
 @media (max-width: 700px) {
   .layout {
-    padding: 40px 20px 28px;
+    padding: 24px 20px 28px;
   }
 }
 
